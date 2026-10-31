@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Guided Reader</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f5f2;
+    --fg: #1d1c1a;
+    --muted: #6b6862;
+    --line: #e2dfd8;
+    --accent: #6b4f2a;
+    --danger: #a5341f;
+    --card: #fffdf9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17181a;
+      --fg: #e8e6e1;
+      --muted: #9a968e;
+      --line: #2c2e31;
+      --accent: #c9a271;
+      --danger: #e5795f;
+      --card: #1e2023;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid;
+    place-items: center;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  .splash { width: min(560px, 86vw); text-align: center; padding: 32px 28px; }
+  .mark {
+    width: 56px; height: 56px; margin: 0 auto 18px;
+    border-radius: 14px; display: grid; place-items: center;
+    background: var(--card); border: 1px solid var(--line); font-size: 26px;
+  }
+  h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; letter-spacing: .02em; }
+  .sub { margin: 0 0 26px; color: var(--muted); font-size: 13px; }
+  .status {
+    display: inline-flex; align-items: center; gap: 10px;
+    color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: .25; transform: scale(.85); }
+    50%      { opacity: 1;   transform: scale(1); }
+  }
+  .hint { margin-top: 22px; color: var(--muted); font-size: 12px; }
+  .error {
+    display: none; margin-top: 22px; text-align: left;
+    background: var(--card); border: 1px solid var(--line);
+    border-left: 3px solid var(--danger); border-radius: 10px; padding: 14px 16px;
+  }
+  .error.on { display: block; }
+  .error h2 { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--danger); }
+  .error pre {
+    margin: 0 0 12px; white-space: pre-wrap; word-break: break-word;
+    font: 12px/1.55 "Cascadia Mono", Consolas, monospace; color: var(--muted);
+    max-height: 168px; overflow: auto; user-select: text;
+  }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 13px; padding: 7px 14px; border-radius: 8px;
+    border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  @media (prefers-color-scheme: dark) { button.primary { color: #17181a; } }
+</style>
+</head>
+<body>
+  <main class="splash">
+    <div class="mark">📖</div>
+    <h1>Guided Reader</h1>
+    <p class="sub">读书 · 批注 · 问 AI</p>
+
+    <div class="status" id="status">
+      <span class="dot"></span>
+      <span id="status-text">正在启动阅读服务…</span>
+    </div>
+
+    <p class="hint" id="hint">首次启动需要几秒准备书库</p>
+
+    <section class="error" id="error">
+      <h2>没能打开书库</h2>
+      <pre id="error-text"></pre>
+      <div class="actions">
+        <button class="primary" id="retry">重试</button>
+        <button id="new-window">在新窗口打开</button>
+      </div>
+    </section>
+  </main>
+
+<script>
+// __MAIN__
+(function () {
+  "use strict";
+
+  var invoke =
+    window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+
+  var statusText = document.getElementById("status-text");
+  var statusBox = document.getElementById("status");
+  var hint = document.getElementById("hint");
+  var errorBox = document.getElementById("error");
+  var errorText = document.getElementById("error-text");
+  var slowTimer = null;
+
+  function setStatus(text) { statusText.textContent = text; }
+
+  function showError(message) {
+    statusBox.style.display = "none";
+    errorText.textContent = String(message || "未知错误");
+    errorBox.classList.add("on");
+    hint.textContent = "";
+  }
+
+  function clearSlowHint() {
+    if (slowTimer) { clearTimeout(slowTimer); slowTimer = null; }
+  }
+
+  async function boot() {
+    errorBox.classList.remove("on");
+    statusBox.style.display = "";
+    setStatus("正在启动阅读服务…");
+    hint.textContent = "首次启动需要几秒准备书库";
+
+    if (!invoke) {
+      showError(
+        "当前是浏览器预览模式，没有桌面外壳。\n请从开始菜单或桌面快捷方式启动 Guided Reader。",
+      );
+      return;
+    }
+
+    slowTimer = setTimeout(function () {
+      hint.textContent = "启动比平时久，仍在等待阅读服务就绪…";
+    }, 12000);
+
+    try {
+      var url = await invoke("reader_url");
+      clearSlowHint();
+      setStatus("正在打开书库…");
+      hint.textContent = "";
+      // 用 localhost 域名而非 127.0.0.1：WebView2 的本地网络访问策略对域名形式更宽容
+      window.location.replace(String(url).replace("127.0.0.1", "localhost"));
+    } catch (error) {
+      clearSlowHint();
+      showError(error && error.message ? error.message : error);
+    }
+  }
+
+  document.getElementById("retry").addEventListener("click", boot);
+
+  document.getElementById("new-window").addEventListener("click", async function () {
+    if (!invoke) return;
+    try {
+      await invoke("open_reader");
+      setStatus("已在新窗口打开");
+      hint.textContent = "可以关闭这个窗口了";
+    } catch (error) {
+      showError(error && error.message ? error.message : error);
+    }
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>

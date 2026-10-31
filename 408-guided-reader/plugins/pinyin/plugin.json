@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "pinyin",
+  "name": "拼音标注",
+  "version": "1.0.0",
+  "description": "给中文加拼音：叠字注音（ruby）、括号式、上标式，可复制 ruby / 上标 / 纯文本；内置中医术语纠音。",
+  "author": "local",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "category": "查检",
+  "surface": ["window", "selection"],
+  "window": { "width": 900, "height": 700, "title": "拼音标注", "resizable": true },
+  "selection": {
+    "actions": [
+      {
+        "id": "annotate",
+        "label": "拼音",
+        "title": "给所选文字加拼音",
+        "order": 45,
+        "accepts": ["text"],
+        "maxChars": 300,
+        "stripPunctuation": false
+      }
+    ]
+  },
+  "permissions": ["read-own-assets"]
+}

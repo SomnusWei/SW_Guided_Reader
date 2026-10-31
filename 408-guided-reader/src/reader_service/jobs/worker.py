@@ -1,0 +1,214 @@
+from __future__ import annotations
+
+import threading
+from queue import Empty, Queue
+from typing import TYPE_CHECKING
+
+from reader_service.foundation import FoundationService
+from reader_service.library import LibraryService
+
+from .repository import JobRepository
+
+if TYPE_CHECKING:
+    from reader_service.outline import OutlineService
+
+
+class PreparationCoordinator:
+    def __init__(
+        self,
+        library: LibraryService,
+        foundation: FoundationService,
+        jobs: JobRepository,
+        worker_count: int = 1,
+        outline: "OutlineService | None" = None,
+        teaching=None,
+    ):
+        if worker_count < 1 or worker_count > 4:
+            raise ValueError("Worker count must be between 1 and 4")
+        self.library = library
+        self.foundation = foundation
+        self.jobs = jobs
+        self.worker_count = worker_count
+        self.outline = outline
+        self.teaching = teaching
+        self._stop = threading.Event()
+        self._wake = threading.Event()
+        self._dispatch_lock = threading.Lock()
+        self._threads: list[threading.Thread] = []
+        self._learning_jobs = Queue(maxsize=1)
+        self._learning_busy = False
+        self._map_wake = threading.Event()
+        self._map_stop = threading.Event()
+        self._map_lock = threading.Lock()
+        self._map_pending: set[str] = set()
+        self._map_milestones: dict[str, int] = {}
+        self._map_thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._threads:
+            return
+        self.foundation.repository.reset_interrupted_pages()
+        self.jobs.recover()
+        if self.outline is not None:
+            self._map_thread = threading.Thread(
+                target=self._run_map_refresh, name="outline-refresh", daemon=True,
+            )
+            self._map_thread.start()
+        # 后台任务线程：处理导读生成等非翻页任务（2.0 起不再有知识点相关任务）
+        learning_thread = threading.Thread(target=self._run_learning, name="background-jobs", daemon=True)
+        learning_thread.start()
+        self._threads.append(learning_thread)
+        for index in range(self.worker_count):
+            thread = threading.Thread(
+                target=self._run,
+                name=f"page-prepare-{index + 1}",
+                daemon=True,
+            )
+            thread.start()
+            self._threads.append(thread)
+
+    def stop(self, timeout: float = 10.0) -> None:
+        with self._dispatch_lock:
+            self._stop.set()
+        self._wake.set()
+        for thread in self._threads:
+            thread.join(timeout=timeout)
+        self._threads.clear()
+        self._map_stop.set()
+        self._map_wake.set()
+        if self._map_thread is not None:
+            self._map_thread.join(timeout=timeout)
+            self._map_thread = None
+
+    def schedule_revision(
+        self, revision_id: str, visible_pages: set[int] | None = None, current_page: int = 0
+    ) -> None:
+        revision = self.foundation.ensure_revision(revision_id)
+        # Keep the worker from claiming a newly enqueued row between enqueue and
+        # the priority update. This is process-local scheduling coordination, not
+        # a second persistence authority.
+        with self._dispatch_lock:
+            self.jobs.cancel_other_revisions(revision_id)
+            if (not self.jobs.has_page_jobs(
+                revision_id, revision["page_count"], revision["foundation_version"]
+            ) and any(p["status"] != "READY" for p in self.foundation.statuses(revision_id))):
+                self.jobs.enqueue_pages(
+                    revision_id, revision["page_count"], revision["foundation_version"]
+                )
+                self.jobs.complete_already_ready_pages(revision_id, 0, revision["page_count"])
+            self.jobs.resume_cancelled_pages(revision_id, revision["foundation_version"])
+            self.jobs.prioritize(revision_id, visible_pages or {current_page}, current_page)
+        # Viewport scheduling must never wait for Outline evidence scanning.
+        self._wake.set()
+
+    def cancel_revision(self, revision_id: str) -> None:
+        self.jobs.cancel_revision(revision_id)
+        self._wake.set()
+
+    def cancel_book(self, book_id: str) -> None:
+        self.jobs.cancel_book(book_id)
+        self._wake.set()
+
+    def retry_page(self, revision_id: str, page_index: int) -> bool:
+        revision = self.foundation.ensure_revision(revision_id)
+        if page_index < 0 or page_index >= revision["page_count"]:
+            raise ValueError("Page index is outside this PDF")
+        if self.foundation.repository.page_status(revision_id, page_index) != "FAILED":
+            return False
+        requeued = self.jobs.requeue_page(
+            revision_id, page_index, revision["foundation_version"]
+        )
+        if not requeued:
+            return False
+        self._wake.set()
+        return True
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            with self._dispatch_lock:
+                if self._stop.is_set():
+                    return
+                # Keep the existing priority order (including prerequisite pages).
+                # Once generation is dispatched, page workers can keep reading.
+                job = self.jobs.claim(("PAGE_PREPARE",) if self._learning_busy else None)
+                if job is not None and job["job_type"] != "PAGE_PREPARE":
+                    self._learning_busy = True
+                    self._learning_jobs.put_nowait(job)
+                    continue
+            if job is None:
+                self._wake.wait(0.25)
+                self._wake.clear()
+                continue
+            cancelled = False
+            for page_index in range(job["page_start"], job["page_end"] + 1):
+                if self._stop.is_set() or self.jobs.cancellation_requested(job["id"]):
+                    cancelled = True
+                    break
+                was_ready = self.foundation.repository.page_status(job["book_source_revision_id"], page_index) == "READY"
+                status = self.foundation.prepare_page(job["book_source_revision_id"], page_index)
+                if not was_ready and status == "READY":
+                    self._queue_map_refresh(job["book_source_revision_id"], page_index)
+            self.jobs.complete(job["id"], cancelled=cancelled)
+
+    def _run_learning(self) -> None:
+        while True:
+            try:
+                job = self._learning_jobs.get(timeout=.25)
+            except Empty:
+                if self._stop.is_set():
+                    return
+                continue
+            try:
+                if self._stop.is_set():
+                    self.jobs.complete(job["id"], cancelled=True)
+                else:
+                    if self.teaching is not None:
+                        self.teaching.run_job(job)
+                    self.jobs.complete(job["id"])
+            finally:
+                with self._dispatch_lock:
+                    self._learning_busy = False
+                self._learning_jobs.task_done()
+                self._wake.set()
+
+    def _queue_map_refresh(self, revision_id: str, page_index: int) -> None:
+        if self.outline is None:
+            return
+        if page_index < 20:
+            ready, total = self.foundation.repository.prefix_progress(revision_id, 20)
+            milestone = total if ready == total else max(1, ready // 4 * 4)
+            with self._map_lock:
+                if milestone <= self._map_milestones.get(revision_id, 0):
+                    return
+                self._map_milestones[revision_id] = milestone
+                self._map_pending.add(revision_id)
+        elif page_index % 16 == 15:
+            with self._map_lock:
+                self._map_pending.add(revision_id)
+        else:
+            return
+        self._map_wake.set()
+
+    def _run_map_refresh(self) -> None:
+        while True:
+            self._map_wake.wait()
+            self._map_wake.clear()
+            with self._map_lock:
+                pending = self._map_pending
+                self._map_pending = set()
+            if not pending and self._map_stop.is_set():
+                return
+            for revision_id in pending:
+                self._refresh_map(revision_id)
+            if self._map_stop.is_set():
+                with self._map_lock:
+                    if not self._map_pending:
+                        return
+
+    def _refresh_map(self, revision_id: str) -> None:
+        try:
+            self.outline.bootstrap(revision_id)
+        except Exception as exc:
+            # Mapping is an optional capability. PDF/OCR publication remains valid and
+            # a later API/bootstrap attempt can retry; never expose source text or paths.
+            print(f"Map bootstrap failed for revision {revision_id}: {type(exc).__name__}")

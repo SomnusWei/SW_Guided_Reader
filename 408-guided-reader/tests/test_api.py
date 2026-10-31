@@ -1,0 +1,389 @@
+from __future__ import annotations
+
+import json
+import threading
+import pytest
+from contextlib import contextmanager
+from http.cookiejar import CookieJar
+from io import BytesIO
+from urllib.error import HTTPError
+from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
+
+from reader_service.annotation import AnnotationRepository, AnnotationService
+from reader_service.foundation import DetectedLine, FoundationRepository, FoundationService
+from reader_service.server import ReaderServer, handler_factory
+
+from conftest import make_pdf
+
+
+@contextmanager
+def running_server(
+    service,
+    annotations=None,
+    preparation=None,
+    outline=None,
+    assistant=None,
+    saved_explanations=None,
+    teaching=None,
+    notes=None,
+):
+    token = "test-launch-token"
+    server = ReaderServer(
+        ("127.0.0.1", 0), handler_factory(
+            service, token, annotations=annotations, preparation=preparation, outline=outline,
+            assistant=assistant, saved_explanations=saved_explanations,
+            teaching=teaching,
+            notes=notes,
+        )
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", token
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def request_json(url, token, *, method="GET", data=None, headers=None):
+    request = Request(
+        url,
+        data=data,
+        method=method,
+        headers={"X-Reader-Token": token, **(headers or {})},
+    )
+    with urlopen(request) as response:
+        return response.status, json.load(response)
+
+
+def test_reader_api_import_open_position_reload_and_duplicate(service):
+    pdf = make_pdf(((612, 792), (792, 612)))
+    with running_server(service) as (base, token):
+        status, imported = request_json(
+            f"{base}/api/books",
+            token,
+            method="POST",
+            data=pdf,
+            headers={"Content-Type": "application/pdf", "X-File-Name": "reader.pdf"},
+        )
+        assert status == 201
+        revision = imported["book"]["active_revision"]
+
+        pdf_request = Request(
+            f"{base}/api/revisions/{revision['id']}/pdf",
+            headers={"X-Reader-Token": token, "Range": "bytes=0-7"},
+        )
+        with urlopen(pdf_request) as response:
+            assert response.status == 206
+            assert response.read().startswith(b"%PDF-")
+
+        position_payload = json.dumps(
+            {"pdf_page_index": 1, "normalized_offset": 0.42, "zoom": 1.3}
+        ).encode()
+        request_json(
+            f"{base}/api/revisions/{revision['id']}/position",
+            token,
+            method="PUT",
+            data=position_payload,
+            headers={"Content-Type": "application/json"},
+        )
+        _, library = request_json(f"{base}/api/books", token)
+        assert library["books"][0]["active_revision"]["position"]["pdf_page_index"] == 1
+        assert library["books"][0]["active_revision"]["position"]["normalized_offset"] == 0.42
+
+        status, duplicate = request_json(
+            f"{base}/api/books",
+            token,
+            method="POST",
+            data=pdf,
+            headers={"Content-Type": "application/pdf", "X-File-Name": "again.pdf"},
+        )
+        assert status == 200
+        assert duplicate["duplicate"] is True
+        assert duplicate["book"]["revision_count"] == 1
+
+
+def test_api_requires_launch_token(service):
+    with running_server(service) as (base, _):
+        try:
+            urlopen(f"{base}/api/books")
+        except HTTPError as error:
+            assert error.code == 401
+        else:
+            raise AssertionError("API accepted a request without the per-launch token")
+
+
+def test_non_ascii_token_is_unauthorized_instead_of_crashing(service):
+    with running_server(service) as (base, _):
+        with pytest.raises(HTTPError) as failure:
+            urlopen(Request(base + "/api/books", headers={"X-Reader-Token": "caf\u00e9"}))
+        assert failure.value.code == 401
+
+
+def test_full_storage_api_reports_actionable_error(service, monkeypatch):
+    import errno
+    def full():
+        raise OSError(errno.ENOSPC, "disk full")
+    monkeypatch.setattr(service.paths, "new_upload", full)
+    with running_server(service) as (base, token):
+        with pytest.raises(HTTPError) as failure:
+            request_json(base + "/api/books", token, method="POST", data=make_pdf())
+        assert failure.value.code == 507
+        assert json.load(failure.value)["code"] == "STORAGE_FULL"
+
+
+def test_search_api_returns_results_and_authoritative_coverage(service):
+    from types import SimpleNamespace
+
+    from test_search import prepared_search
+
+    _book, revision, foundation = prepared_search(service)
+    preparation = SimpleNamespace(foundation=foundation)
+    with running_server(service, preparation=preparation) as (base, token):
+        status, result = request_json(
+            f"{base}/api/revisions/{revision['id']}/search?q=%E4%B8%AD%E6%96%AD%E5%90%91%E9%87%8F",
+            token,
+        )
+    assert status == 200
+    assert result["coverage"]["ready_pages"] == 1
+    assert result["coverage"]["statuses"]["FAILED"] == 1
+    assert result["results"][0]["pdf_page_index"] == 0
+    assert len(result["results"][0]["match_ranges"]) == 2
+
+
+def test_preparation_stream_closes_cleanly_and_waits_for_queued_retry(service):
+    from types import SimpleNamespace
+
+    payload = make_pdf()
+    imported = service.intake(BytesIO(payload), content_length=len(payload), filename="progress.pdf")
+    revision_id = imported["book"]["active_revision"]["id"]
+    snapshots = [
+        [{"pdf_page_index": 0, "status": "FAILED", "prepared_at": None, "failure_code": "OCR"}],
+        [{"pdf_page_index": 0, "status": "READY", "prepared_at": "now", "failure_code": None}],
+    ]
+    calls = 0
+
+    def statuses(_revision_id):
+        nonlocal calls
+        result = snapshots[min(calls, 1)]
+        calls += 1
+        return result
+
+    preparation = SimpleNamespace(
+        foundation=SimpleNamespace(ensure_revision=lambda _id: {}, statuses=statuses),
+        jobs=SimpleNamespace(counts=lambda _id: {"QUEUED": 1 if calls == 1 else 0, "RUNNING": 0}),
+    )
+    with running_server(service, preparation=preparation) as (base, token):
+        request = Request(
+            f"{base}/api/revisions/{revision_id}/preparation/events",
+            headers={"X-Reader-Token": token},
+        )
+        with urlopen(request, timeout=3) as response:
+            body = response.read().decode("utf-8")
+            assert response.headers["Connection"] == "close"
+    assert calls >= 2
+    assert "retry: 1000" in body
+    assert body.count("event: pages") == 2
+    assert '"active_jobs":true' in body
+    assert '"active_jobs":false' in body
+
+
+def test_retry_api_resets_failed_page_before_background_worker_claims_it(service):
+    from reader_service.jobs import JobRepository, PreparationCoordinator
+
+    payload = make_pdf()
+    imported = service.intake(BytesIO(payload), content_length=len(payload), filename="retry.pdf")
+    revision_id = imported["book"]["active_revision"]["id"]
+    repository = FoundationRepository(service.database)
+    foundation = FoundationService(service, repository, lambda: None)
+    jobs = JobRepository(service.database)
+    preparation = PreparationCoordinator(service, foundation, jobs)
+    preparation.schedule_revision(revision_id)
+    job = jobs.claim()
+    assert job is not None
+    repository.fail_page(revision_id, 0, "OCR_FAILED")
+    jobs.complete(job["id"])
+
+    with running_server(service, preparation=preparation) as (base, token):
+        status, _ = request_json(
+            f"{base}/api/revisions/{revision_id}/preparation/retry", token,
+            method="POST", data=b'{"pdf_page_index":0}',
+            headers={"Content-Type": "application/json"},
+        )
+        _, snapshot = request_json(f"{base}/api/revisions/{revision_id}/preparation", token)
+    assert status == 202
+    assert snapshot["pages"][0]["status"] == "NOT_PREPARED"
+    assert snapshot["jobs"]["QUEUED"] == 1
+
+
+def test_plain_browser_entry_bootstraps_same_origin_api_session(service):
+    with running_server(service) as (base, token):
+        opener = build_opener(HTTPCookieProcessor(CookieJar()))
+        with opener.open(f"{base}/?token={token}") as response:
+            assert response.status == 200
+            assert "reader_launch=" in response.headers["Set-Cookie"]
+            assert "HttpOnly" in response.headers["Set-Cookie"]
+            assert "SameSite=Strict" in response.headers["Set-Cookie"]
+        with opener.open(f"{base}/api/books") as response:
+            assert response.status == 200
+            assert json.load(response) == {"books": []}
+        with opener.open(f"{base}/") as response:
+            assert response.status == 200
+        payload = make_pdf()
+        request = Request(f"{base}/api/books", data=payload, headers={
+            "Content-Type": "application/pdf", "X-File-Name": "cookie.pdf", "Origin": base})
+        with opener.open(request) as response:
+            assert response.status == 201
+            book = json.load(response)["book"]
+        with opener.open(Request(f"{base}/api/books/{book['id']}", method="DELETE", headers={"Origin": base})) as response:
+            assert response.status == 204
+
+
+def test_anonymous_or_invalid_bootstrap_never_creates_a_session(service):
+    with running_server(service) as (base, token):
+        opener = build_opener(HTTPCookieProcessor(CookieJar()))
+        for path in ("/", "/?token=wrong", f"/?token={token}&token=wrong", "/api/books"):
+            with pytest.raises(HTTPError) as failure:
+                opener.open(base + path)
+            assert failure.value.code == 401
+            assert failure.value.headers.get("Set-Cookie") is None
+        with pytest.raises(HTTPError) as failure:
+            opener.open(Request(base + "/api/books", data=make_pdf()))
+        assert failure.value.code == 401
+        assert service.list_books() == []
+        assert not list(service.paths.blob_root().rglob("*.pdf"))
+
+
+@pytest.mark.parametrize("headers", [
+    {"Host": "untrusted.example"}, {"Origin": "https://untrusted.example"},
+    {"Origin": "null"}, {"Sec-Fetch-Site": "cross-site"},
+])
+def test_untrusted_browser_requests_cannot_bootstrap_or_mutate(service, headers):
+    with running_server(service) as (base, token):
+        for path, method, data in ((f"/?token={token}", "GET", None),
+                                   ("/api/books", "POST", make_pdf())):
+            with pytest.raises(HTTPError) as failure:
+                urlopen(Request(base + path, method=method, data=data,
+                                headers={"X-Reader-Token": token, **headers}))
+            assert failure.value.code == 403
+            assert failure.value.headers.get("Set-Cookie") is None
+        assert service.list_books() == []
+
+
+def test_cross_site_top_level_document_navigation_is_allowed_but_forms_are_not(service):
+    """WebView2 新运行时把启动器主窗口整页跳转标记为 cross-site 文档导航。
+
+    真机 2.0.0 升级验收发现：只读的顶层文档 GET（等价地址栏输入/启动跳转）
+    必须放行，而跨站写入（dest=document 的 POST 表单、dest=empty 的 fetch）
+    依旧要被本地 CSRF 防护拦下。
+    """
+    with running_server(service) as (base, token):
+        with urlopen(Request(base + f"/?token={token}", headers={
+                "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "document"})) as response:
+            assert response.status == 200
+        with pytest.raises(HTTPError) as failure:
+            urlopen(Request(base + "/api/books", method="POST", data=make_pdf(), headers={
+                "X-Reader-Token": token,
+                "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "document"}))
+        assert failure.value.code == 403
+        with pytest.raises(HTTPError) as failure:
+            urlopen(Request(base + f"/api/books?token={token}", headers={
+                "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "empty"}))
+        assert failure.value.code == 403
+        assert service.list_books() == []
+    pdf = make_pdf()
+    imported = service.intake(
+        BytesIO(pdf), content_length=len(pdf), filename="api-marks.pdf"
+    )
+    revision = imported["book"]["active_revision"]
+    repository = FoundationRepository(service.database)
+
+    class UnusedEngine:
+        def prepare_page(self, page_image, page_size):
+            raise AssertionError("not used")
+
+    foundation = FoundationService(service, repository, UnusedEngine)
+    foundation.ensure_revision(revision["id"])
+    assert repository.mark_preparing(revision["id"], 0)
+    repository.publish_page(
+        revision["id"],
+        0,
+        route="OCR",
+        foundation_version=1,
+        engine_profile="fixture:v1",
+        lines=[DetectedLine(
+            quad=((0.1, 0.2), (0.5, 0.2), (0.5, 0.3), (0.1, 0.3)),
+            text="ABCD",
+            confidence=1,
+            cells=((0.1, 0.2, 0, 1), (0.2, 0.3, 1, 2), (0.3, 0.4, 2, 3), (0.4, 0.5, 3, 4)),
+        )],
+    )
+    annotations = AnnotationService(foundation, AnnotationRepository(service.database))
+
+    with running_server(service, annotations) as (base, token):
+        body = json.dumps({
+            "pdf_page_index": 0,
+            "start": {"line_ordinal": 0, "boundary": 1},
+            "end": {"line_ordinal": 0, "boundary": 3},
+            "body": "API note",
+            "highlight_style": "GREEN",
+        }).encode()
+        status, created = request_json(
+            f"{base}/api/revisions/{revision['id']}/annotations",
+            token,
+            method="POST",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        assert status == 201
+        assert created["annotation"]["quote"] == "BC"
+        assert created["annotation"]["highlight_style"] == "GREEN"
+        assert created["annotation"]["quads"] == [
+            [[0.2, 0.2], [0.4, 0.2], [0.4, 0.3], [0.2, 0.3]]
+        ]
+
+        _, listed = request_json(
+            f"{base}/api/revisions/{revision['id']}/annotations?page=0", token
+        )
+        assert listed["annotations"] == [created["annotation"]]
+
+        request = Request(
+            f"{base}/api/revisions/{revision['id']}/annotations/{created['annotation']['id']}",
+            method="DELETE",
+            headers={"X-Reader-Token": token},
+        )
+        with urlopen(request) as response:
+            assert response.status == 204
+        _, listed = request_json(
+            f"{base}/api/revisions/{revision['id']}/annotations?page=0", token
+        )
+        assert listed == {"annotations": []}
+
+
+def test_outline_and_manual_page_label_api(service):
+    from reader_service.foundation import PageLabelRepository, PageLabelService
+    from reader_service.outline import OutlineRepository, OutlineService
+
+    pdf = make_pdf(((612, 792), (612, 792)))
+    imported = service.intake(BytesIO(pdf), content_length=len(pdf), filename="map-api.pdf")
+    revision_id = imported["book"]["active_revision"]["id"]
+    labels = PageLabelService(service, PageLabelRepository(service.database))
+    outline = OutlineService(service, OutlineRepository(service.database), labels)
+    with running_server(service, outline=outline) as (base, token):
+        status, tree = request_json(f"{base}/api/revisions/{revision_id}/outline", token)
+        assert status == 200
+        assert tree["nodes"] == []
+
+        body = json.dumps({"printed_label": "封二"}).encode()
+        status, saved = request_json(
+            f"{base}/api/revisions/{revision_id}/page-labels/1",
+            token,
+            method="PUT",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        assert status == 200
+        assert saved["page_label"]["method"] == "MANUAL"
+        _, snapshot = request_json(f"{base}/api/revisions/{revision_id}/page-labels", token)
+        assert snapshot["labels"][1]["printed_label"] == "封二"

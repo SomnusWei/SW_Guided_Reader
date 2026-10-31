@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "dict",
+  "name": "中医辞典",
+  "version": "1.0.0",
+  "description": "九部离线中医词典，20 万词条，支持词头、别名与全文检索，可把词回传书内搜索。",
+  "author": "local",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "category": "查检",
+  "surface": ["window", "selection"],
+  "window": { "width": 980, "height": 720, "title": "中医辞典", "resizable": true },
+  "selection": {
+    "actions": [
+      {
+        "id": "lookup",
+        "label": "词典",
+        "title": "用中医辞典查所选文字",
+        "order": 40,
+        "accepts": ["text"],
+        "maxChars": 60,
+        "stripPunctuation": true
+      }
+    ]
+  },
+  "permissions": ["read-own-assets"]
+}

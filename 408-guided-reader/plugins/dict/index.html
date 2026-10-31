@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>中医辞典</title>
+<style>
+  :root{
+    --bg:#1b1b1f; --panel:#24242a; --panel2:#2c2c34; --line:#3a3a44; --ink:#e6e6ea; --ink2:#9a9aa6;
+    --accent:#8f88e8; --accent2:#b3adff; --hl:#4a4470; --ok:#6fce9c;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.7 "Microsoft YaHei","PingFang SC","Noto Sans CJK SC",system-ui,sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  header{
+    flex:0 0 auto; padding:10px 16px; background:linear-gradient(180deg,#24242a,#1e1e23);
+    border-bottom:1px solid var(--line); display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+  }
+  .brand{font-weight:700; font-size:16px; color:var(--accent); letter-spacing:1px; white-space:nowrap}
+  .brand small{font-weight:400; color:var(--ink2); font-size:11px; letter-spacing:0; margin-left:6px}
+  .searchbox{flex:1 1 300px; display:flex; gap:6px; min-width:200px; position:relative}
+  #q{
+    flex:1; padding:8px 34px 8px 12px; border:1px solid var(--line); border-radius:8px;
+    background:var(--panel2); font-size:15px; font-family:inherit; color:var(--ink); outline:none;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  #q:focus{border-color:var(--accent2); box-shadow:0 0 0 3px rgba(143,136,232,.18)}
+  #clearBtn{
+    position:absolute; right:8px; top:50%; transform:translateY(-50%); border:0; background:none;
+    color:#6b6b78; font-size:17px; cursor:pointer; padding:2px 4px; line-height:1; display:none;
+  }
+  #clearBtn:hover{color:var(--accent)}
+  select{
+    padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--panel2);
+    font-size:13px; font-family:inherit; color:var(--ink); cursor:pointer; outline:none;
+  }
+  .tabs{display:flex; gap:4px; flex-wrap:wrap}
+  .tab{
+    padding:5px 12px; border:1px solid var(--line); border-radius:16px; background:var(--panel2);
+    font-size:12.5px; cursor:pointer; color:var(--ink2); white-space:nowrap; transition:.15s;
+    user-select:none;
+  }
+  .tab:hover{border-color:var(--accent2); color:var(--accent)}
+  .tab.on{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600}
+  .tab .c{opacity:.62; font-size:11px; margin-left:3px}
+
+  main{flex:1 1 auto; display:flex; min-height:0}
+  #side{flex:0 0 272px; min-width:0; border-right:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; min-height:0}
+  #sideHead{
+    flex:0 0 auto; padding:8px 12px; font-size:12px; color:var(--ink2);
+    border-bottom:1px solid var(--line); background:#1f1f24;
+    display:flex; justify-content:space-between; align-items:center; gap:8px;
+  }
+  #hitList{flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain}
+  .hit{padding:7px 12px; border-bottom:1px solid #2c2c34; cursor:pointer; font-size:14px;
+       display:flex; justify-content:space-between; gap:8px; align-items:baseline;
+       min-width:0; overflow:hidden}
+  .hit:hover{background:#2c2c34}
+  .hit.on{background:#4a4470; border-left:3px solid var(--accent); padding-left:9px}
+  .hit .k{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .hit .d{font-size:10.5px; color:#9a9aa6; flex:0 0 auto}
+  mark{background:var(--hl); color:#fff; padding:0 1px; border-radius:2px}
+
+  #view{flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain}
+  .art{max-width:830px; margin:0 auto; padding:22px 26px 80px}
+  .art h1{font-size:24px; margin:0 0 4px; color:var(--accent); letter-spacing:1px;
+          border-bottom:2px solid var(--accent2); padding-bottom:8px; display:inline-block}
+  .art .src{font-size:11.5px; color:#9a9aa6; margin:8px 0 18px; display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+  .art .src .pill{background:#2c2c34; color:var(--accent); padding:1px 8px; border-radius:10px}
+  .art .body{white-space:pre-wrap; word-break:break-word; font-size:15px; line-height:1.9}
+  .art .body .pn{color:var(--accent2); font-weight:600}
+  .acts{display:flex; gap:8px; margin:26px 0 0; padding-top:16px; border-top:1px dashed var(--line); flex-wrap:wrap}
+  .acts button{padding:6px 14px; border:1px solid var(--line); background:#fff; border-radius:7px;
+               background:var(--panel2);
+               font-size:12.5px; cursor:pointer; font-family:inherit; color:var(--ink2)}
+  .acts button:hover{border-color:var(--accent2); color:var(--accent)}
+  .nav{display:flex; justify-content:space-between; margin-top:14px; font-size:12.5px}
+  .nav a{color:var(--accent); cursor:pointer; text-decoration:none}
+  .nav a:hover{text-decoration:underline}
+  .nav a.dis{color:#ccc; cursor:default; text-decoration:none}
+
+  .home{padding:30px 26px; max-width:920px; margin:0 auto}
+  .home h2{font-size:18px; color:var(--accent); margin:0 0 6px}
+  .home p.tip{color:var(--ink2); font-size:13px; margin:0 0 20px}
+  .cards{display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px}
+  .card{border:1px solid var(--line); border-radius:10px; padding:13px 14px; background:var(--panel);
+        cursor:pointer; transition:.15s; position:relative; overflow:hidden}
+  .card:hover{border-color:var(--accent2); box-shadow:0 3px 10px rgba(143,136,232,.12); transform:translateY(-2px)}
+  .card .n{font-weight:700; font-size:14.5px; margin-bottom:3px; padding-right:30px}
+  .card .m{font-size:11.5px; color:#9a9aa6}
+  .card .g{position:absolute; right:10px; top:10px; font-size:10px; color:#6b6b78}
+  .recent{margin-bottom:24px}
+  .chips{display:flex; gap:7px; flex-wrap:wrap}
+  .chip{padding:4px 12px; background:#fff; border:1px solid var(--line); border-radius:14px;
+        background:var(--panel2);
+        font-size:13px; cursor:pointer; color:var(--ink)}
+  .chip:hover{border-color:var(--accent); color:var(--accent2); background:#2c2c34}
+
+  #status{flex:0 0 auto; padding:5px 16px; font-size:11.5px; color:#9a9aa6; background:#1f1f24;
+          border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:10px}
+  #status .rt{color:var(--ok)}
+  .spin{display:inline-block; width:12px; height:12px; border:2px solid #3a3a44; border-top-color:var(--accent);
+        border-radius:50%; animation:sp .7s linear infinite; vertical-align:-2px; margin-right:6px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .kw{border-bottom:1px dotted var(--accent2); cursor:pointer}
+  .kw:hover{background:var(--hl)}
+  .art .body .sec{color:var(--accent); font-weight:600}
+
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#3a3a44; border-radius:5px}
+  ::-webkit-scrollbar-thumb:hover{background:#4a4a56}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  @media (max-width:760px){
+    #side{flex:0 0 40%}
+    .art{padding:16px 15px 60px}
+    .brand small{display:none}
+    header{padding:8px 10px}
+  }
+
+  /* ---- Reader 插件：白天主题（原页面为硬编码深色，这里覆盖主要表面） ---- */
+  html[data-theme="light"]{
+    --bg:#faf8f3; --panel:#ffffff; --panel2:#f1eee7; --line:#ddd6c9;
+    --ink:#23201b; --ink2:#6d675c; --hl:#ffe08a; --ok:#1c8a5e;
+    --accent:#5a4fcf; --accent2:#4638b8;
+  }
+  html[data-theme="light"] header{background:linear-gradient(180deg,#ffffff,#f4f1ea)}
+  html[data-theme="light"] .tabs{background:#f7f4ee !important}
+  html[data-theme="light"] #status{background:#f4f1ea; color:#6d675c}
+  html[data-theme="light"] .hit{border-bottom-color:#eee9df}
+  html[data-theme="light"] .hit:hover{background:#f1eee7}
+  html[data-theme="light"] .hit.on{background:#e7e1ff}
+  html[data-theme="light"] .hit .d, html[data-theme="light"] .art .src,
+  html[data-theme="light"] .card .m, html[data-theme="light"] .card .g{color:#6d675c}
+  html[data-theme="light"] mark{background:var(--hl); color:#23201b}
+  html[data-theme="light"] .art .src .pill, html[data-theme="light"] .chip:hover{background:#f1eee7}
+  html[data-theme="light"] .chip{background:#ffffff; color:#3a352c}
+  html[data-theme="light"] .acts button{background:#f7f4ee; color:#3a352c}
+  html[data-theme="light"] .tab{color:#4c4740}
+  html[data-theme="light"] ::-webkit-scrollbar-thumb{background:#d8d2c6}
+  html[data-theme="light"] .lt-plugin-bar button{background:#ffffff; color:#3a352c; border-color:#ddd6c9}
+
+  .lt-plugin-bar{position:fixed; right:14px; bottom:34px; z-index:20}
+  .lt-plugin-bar button{
+    padding:7px 13px; cursor:pointer; font-family:inherit; font-size:12px;
+    color:var(--ink); background:var(--panel2); border:1px solid var(--line);
+    border-radius:8px; box-shadow:0 4px 14px rgb(0 0 0 / 18%);
+  }
+  .lt-plugin-bar button:hover{border-color:var(--accent); color:var(--accent2)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">中医辞典<small>离线 · 九部</small></div>
+  <div class="searchbox">
+    <input id="q" type="search" placeholder="查词头或释义关键字…（如：少阳 / 阳明 / 瘀血 / 甘草）" autocomplete="off" spellcheck="false">
+    <button id="clearBtn" title="清空">✕</button>
+  </div>
+  <select id="scope" title="检索范围"><option value="all">全部词典</option></select>
+  <select id="mode" title="匹配方式">
+    <option value="smart">智能（前缀优先）</option>
+    <option value="prefix">词头开头</option>
+    <option value="contain">词头包含</option>
+    <option value="full">全文检索</option>
+  </select>
+</header>
+<div class="tabs" id="tabs" style="flex:0 0 auto; padding:7px 16px; background:#1f1f24; border-bottom:1px solid var(--line);"></div>
+
+<main>
+  <aside id="side">
+    <div id="sideHead"><span id="hitInfo">词条列表</span><span id="hitCnt"></span></div>
+    <div id="hitList"></div>
+  </aside>
+  <section id="view"><div class="home" id="home"></div></section>
+</main>
+
+<div id="status"><span id="stL">就绪</span><span class="rt" id="stR"></span></div>
+
+<script>
+'use strict';
+/* ==========================================================
+   中医辞典 · 完全离线
+   数据结构：
+     小词典  data/<code>.json       {"e":[[word,text],...],"a":{alias:target}}
+     大词典  data/<code>.keys.json  {"keys":[[word,chunk,off],...],"alias":{...},"chunks":N}
+             data/<code>.<i>.json   [text,...]           （按需加载）
+   ========================================================== */
+
+const DATA = './data/';
+const $ = s => document.querySelector(s);
+
+const S = {
+  index: [], dicts: new Map(),   // code -> rec
+  q: '', mode: 'smart', scope: 'all',
+  hits: [], pos: -1, cur: null,
+  lastRead: []
+};
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function toast(m) {
+  $('#stL').textContent = m;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => $('#stL').textContent = '就绪', 2400);
+}
+
+function hl(text, q, clip) {
+  if (!q) return esc(text);
+  let src = text, pre = '';
+  if (clip && text.length > clip * 2) {
+    const p = text.toLowerCase().indexOf(q.toLowerCase());
+    if (p > clip) { src = text.slice(p - clip); pre = '…'; }
+    if (src.length > clip * 2) src = src.slice(0, clip * 2) + '…';
+  }
+  const low = src.toLowerCase(), ql = q.toLowerCase();
+  let i = 0, out = '';
+  while (true) {
+    const p = low.indexOf(ql, i);
+    if (p < 0) { out += esc(src.slice(i)); break; }
+    out += esc(src.slice(i, p)) + '<mark>' + esc(src.slice(p, p + q.length)) + '</mark>';
+    i = p + q.length;
+  }
+  return pre + out;
+}
+
+/* ---------- 加载 ---------- */
+async function getJSON(u) {
+  const r = await fetch(u, { cache: 'force-cache' });
+  if (!r.ok) throw new Error(u.split('/').pop() + ' 读取失败 (' + r.status + ')');
+  return r.json();
+}
+
+async function loadIndex() {
+  S.index = await getJSON(DATA + 'index.json');
+  const sc = $('#scope');
+  S.index.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.code;
+    o.textContent = d.name;
+    sc.appendChild(o);
+  });
+}
+
+/** 载入一部词典：小词典整体；大词典只载词头索引 */
+async function loadDict(code) {
+  if (S.dicts.has(code)) {
+    const r = S.dicts.get(code);
+    if (r.ready) return r;
+    if (r.loading) return r.loading;
+  }
+  const meta = S.index.find(d => d.code === code);
+  if (!meta) return null;
+  const rec = S.dicts.get(code) || { meta, keys: [], texts: new Map(), alias: {}, ready: false };
+  S.dicts.set(code, rec);
+
+  rec.loading = (async () => {
+    if (meta.sharded) {
+      const k = await getJSON(DATA + code + '.keys.json');
+      rec.keys = k.keys;
+      rec.alias = k.alias || {};
+      rec.sharded = true;
+      rec.chunkSize = meta.chunkSize || 512;
+    } else {
+      const p = await getJSON(DATA + meta.file);
+      const e = p.e || p;
+      rec.keys = e.map((x, i) => [x[0], 0, i]);
+      rec.alias = p.a || {};
+      rec.texts.set(0, e.map(x => x[1]));
+      rec.sharded = false;
+    }
+    rec.keyArr = rec.keys.map(x => x[0]);
+    rec.ready = true;
+    rec.loading = null;
+    return rec;
+  })();
+  return rec.loading;
+}
+
+/** 取某条正文（大词典按块懒加载） */
+async function textOf(rec, idx) {
+  const [, chunk, off] = rec.keys[idx];
+  if (rec.texts.has(chunk)) return rec.texts.get(chunk)[off];
+  const arr = await getJSON(DATA + rec.meta.code + '.' + chunk + '.json');
+  rec.texts.set(chunk, arr);
+  return arr[off];
+}
+
+async function ensureScopeLoaded() {
+  if (S.scope === 'all') {
+    for (const d of S.index) await loadDict(d.code);
+  } else {
+    await loadDict(S.scope);
+  }
+}
+
+/* ---------- 检索 ---------- */
+function upperBound(arr, q) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < q) lo = m + 1; else hi = m; }
+  return lo;
+}
+
+async function doSearch() {
+  const q = S.q.trim();
+  S.hits = []; S.pos = -1;
+  if (!q) { renderHits(); renderHome(); return; }
+
+  const dicts = S.scope === 'all'
+    ? [...S.dicts.values()].filter(r => r.ready)
+    : [S.dicts.get(S.scope)].filter(r => r && r.ready);
+  const ql = q.toLowerCase();
+  const MAX = 300;
+  const seen = new Set();
+  const push = (rec, i) => {
+    const k = rec.keys[i][0];
+    const id = rec.meta.code + '\u0000' + k;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    S.hits.push({ code: rec.meta.code, idx: i, k, exact: k === q });
+    return true;
+  };
+
+  if (S.mode === 'prefix' || S.mode === 'smart') {
+    for (const rec of dicts) {
+      const arr = rec.keyArr;
+      const a = upperBound(arr, q);
+      for (let i = a; i < arr.length && S.hits.length < MAX; i++) {
+        if (!arr[i].startsWith(q)) break;
+        push(rec, i);
+      }
+    }
+  }
+  if (S.mode === 'contain' || (S.mode === 'smart' && S.hits.length < 15)) {
+    for (const rec of dicts) {
+      for (let i = 0; i < rec.keyArr.length && S.hits.length < MAX; i++) {
+        if (rec.keyArr[i].toLowerCase().includes(ql)) push(rec, i);
+      }
+      if (S.mode === 'contain' && S.hits.length >= MAX) break;
+    }
+  }
+  S.hits.sort((a, b) => (b.exact ? 1 : 0) - (a.exact ? 1 : 0) || a.k.length - b.k.length);
+
+  if (S.mode === 'full') {
+    for (const rec of dicts) {
+      for (let i = 0; i < rec.keys.length && S.hits.length < MAX; i++) {
+        const t = await textOf(rec, i);
+        if (t && t.toLowerCase().includes(ql)) {
+          const k = rec.keys[i][0];
+          const id = rec.meta.code + '\u0000' + k;
+          if (seen.has(id)) continue;
+          seen.add(id);
+          S.hits.push({ code: rec.meta.code, idx: i, k, exact: k === q, inBody: t.slice(0, 80) });
+        }
+      }
+      if (S.hits.length >= MAX) break;
+    }
+  }
+
+  renderHits();
+  if (S.hits.length) showEntry(0, true);
+  else renderEmpty(q);
+}
+
+/* ---------- 渲染 ---------- */
+function renderHome() {
+  const total = S.index.reduce((s, d) => s + d.count, 0);
+  const rec = S.lastRead.slice(-12).reverse();
+  const cards = S.index.map(d => `
+    <div class="card" data-code="${d.code}">
+      <span class="g">${esc(d.group)}</span>
+      <div class="n">${esc(d.name)}</div>
+      <div class="m">${d.count.toLocaleString()} 条</div>
+    </div>`).join('');
+  $('#home').innerHTML = `
+    ${rec.length ? `<div class="recent"><h2>最近查阅</h2><div class="chips">${
+      rec.map(r => `<span class="chip" data-k="${esc(r.k)}">${esc(r.k)}</span>`).join('')}</div></div>` : ''}
+    <h2>词典库</h2>
+    <p class="tip">共 ${S.index.length} 部、${total.toLocaleString()} 个词条。全部数据在本机，无需联网。</p>
+    <div class="cards">${cards}</div>`;
+  $('#home').querySelectorAll('.card').forEach(c => c.onclick = () => switchScope(c.dataset.code));
+  $('#home').querySelectorAll('.chip').forEach(c => c.onclick = () => {
+    $('#q').value = c.dataset.k; S.q = c.dataset.k; doSearch();
+  });
+}
+
+function renderEmpty(q) {
+  $('#view').innerHTML = `<div class="home"><h2>没有找到「${esc(q)}」</h2>
+    <p class="tip">可以试试：改用「全文检索」在释义中查找，或把检索范围改为「全部词典」。</p>
+    <div class="chips"><span class="chip" data-a="full">改为全文检索</span>
+    <span class="chip" data-a="all">范围改为全部词典</span></div></div>`;
+  $('#view').querySelectorAll('.chip').forEach(c => c.onclick = () => {
+    if (c.dataset.a === 'full') { $('#mode').value = 'full'; S.mode = 'full'; }
+    else switchScope('all');
+    doSearch();
+  });
+}
+
+function renderTabs() {
+  const total = S.index.reduce((s, d) => s + d.count, 0);
+  let h = `<span class="tab on" data-code="all">全部<span class="c">${total.toLocaleString()}</span></span>`;
+  h += S.index.map(d => `<span class="tab" data-code="${d.code}">${esc(d.name)}<span class="c">${d.count.toLocaleString()}</span></span>`).join('');
+  $('#tabs').innerHTML = h;
+  $('#tabs').querySelectorAll('.tab').forEach(t => t.onclick = () => switchScope(t.dataset.code));
+}
+
+async function switchScope(code) {
+  S.scope = code;
+  $('#scope').value = code;
+  $('#tabs').querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.code === code));
+  if (code !== 'all' && !S.dicts.get(code)?.ready) {
+    const nm = S.index.find(d => d.code === code)?.name || '';
+    $('#stL').innerHTML = `<span class="spin"></span>载入 ${esc(nm)}…`;
+    await loadDict(code);
+    $('#stL').textContent = '就绪';
+  }
+  if (S.q) doSearch();
+}
+
+function renderHits() {
+  const list = $('#hitList');
+  if (!S.q.trim()) {
+    $('#hitInfo').textContent = '词条列表';
+    $('#hitCnt').textContent = '';
+    list.innerHTML = `<div style="padding:20px 14px;color:#9a9aa6;font-size:12.5px;line-height:2">
+      输入关键字开始查词。<br>支持词头前缀、包含、全文三种方式。<br><br>
+      <span style="color:#6b6b78">快捷键</span><br>
+      <kbd>/</kbd> 聚焦 · <kbd>↑↓</kbd> 切换 · <kbd>Enter</kbd> 打开</div>`;
+    return;
+  }
+  $('#hitInfo').textContent = S.hits.length >= 300 ? '命中 ≥300（已截断）' : `命中 ${S.hits.length}`;
+  $('#hitCnt').textContent = S.scope === 'all' ? '全部' : (S.index.find(d => d.code === S.scope)?.name || '');
+  if (!S.hits.length) { list.innerHTML = ''; return; }
+  const q = S.q.trim();
+  list.innerHTML = S.hits.map((h, i) => {
+    const dn = S.index.find(d => d.code === h.code)?.name || '';
+    const sub = h.inBody ? hl(h.inBody.replace(/\n/g, ' '), q, 55) : '';
+    return `<div class="hit" data-i="${i}" title="${esc(h.k)}">
+      <span class="k">${hl(h.k, q)}${sub ? `<div style="font-size:11px;color:#9a9aa6;font-weight:400;margin-top:2px;white-space:normal">${sub}</div>` : ''}</span>
+      <span class="d">${esc(dn.slice(0, 4))}</span></div>`;
+  }).join('');
+  list.querySelectorAll('.hit').forEach(el => el.onclick = () => showEntry(+el.dataset.i));
+}
+
+async function showEntry(i, keep) {
+  const h = S.hits[i];
+  if (!h) return;
+  S.pos = i; S.cur = h;
+  $('#hitList').querySelectorAll('.hit').forEach((el, j) => el.classList.toggle('on', j === i));
+  $('#hitList').querySelector('.hit.on')?.scrollIntoView({ block: 'nearest' });
+
+  const rec = S.dicts.get(h.code);
+  const dn = S.index.find(d => d.code === h.code)?.name || '';
+  let body = '';
+  if (!rec.texts.has(rec.keys[h.idx][1])) {
+    $('#view').innerHTML = `<div class="art"><h1>${esc(h.k)}</h1>
+      <div class="src"><span class="pill">${esc(dn)}</span><span><span class="spin"></span>读取正文…</span></div></div>`;
+  }
+  try { body = await textOf(rec, h.idx); } catch (e) { body = '（正文读取失败：' + e.message + '）'; }
+
+  S.lastRead = S.lastRead.filter(r => !(r.k === h.k && r.code === h.code));
+  S.lastRead.push({ k: h.k, code: h.code });
+  if (S.lastRead.length > 40) S.lastRead.shift();
+
+  const prevDis = i <= 0, nextDis = i >= S.hits.length - 1;
+  $('#view').innerHTML = `<div class="art">
+    <h1>${esc(h.k)}</h1>
+    <div class="src"><span class="pill">${esc(dn)}</span>
+      <span>${body.length.toLocaleString()} 字</span>
+      <span>第 ${i + 1} / ${S.hits.length} 条</span></div>
+    <div class="body" id="artBody">${formatBody(body, S.q.trim())}</div>
+    <div class="acts">
+      <button id="copyBtn">复制</button>
+      <button id="backBtn">回到首页</button>
+      <button id="sameBtn">在此词典中查此词</button>
+    </div>
+    <div class="nav">
+      <a id="prevA" class="${prevDis ? 'dis' : ''}">← 上一条</a>
+      <a id="nextA" class="${nextDis ? 'dis' : ''}">下一条 →</a>
+    </div></div>`;
+  if (!keep) $('#view').scrollTop = 0;
+
+  $('#copyBtn').onclick = async () => {
+    const t = h.k + '\n\n' + body + '\n\n——《' + dn + '》';
+    try { await navigator.clipboard.writeText(t); toast('已复制'); }
+    catch { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('已复制'); }
+  };
+  $('#backBtn').onclick = () => { $('#view').innerHTML = '<div class="home" id="home"></div>'; renderHome(); };
+  $('#sameBtn').onclick = () => { $('#q').value = h.k; S.q = h.k; $('#mode').value = 'prefix'; S.mode = 'prefix'; doSearch(); };
+  if (!prevDis) $('#prevA').onclick = () => showEntry(i - 1);
+  if (!nextDis) $('#nextA').onclick = () => showEntry(i + 1);
+
+  markTerms(h.code);
+}
+
+function formatBody(txt, q) {
+  let s = esc(txt || '');
+  // 拼音注音片段着色
+  s = s.replace(/\(([a-zA-Züǖǘǚǜāáǎàēéěèīíǐìōóǒòūúǔùǹńň]+)\s/g, '(<span class="pn">$1</span> ');
+  // 【小节标题】
+  s = s.replace(/【([^】\n]{1,20})】/g, '<span class="sec">【$1】</span>');
+  if (q) {
+    try { s = s.replace(new RegExp(reEsc(esc(q)), 'gi'), m => '<mark>' + m + '</mark>'); } catch (e) {}
+  }
+  return s;
+}
+
+/** 正文中的术语加虚线，点击可跳查 */
+async function markTerms(code) {
+  const el = $('#artBody');
+  if (!el) return;
+  const plain = el.textContent;
+  if (plain.length > 15000) return;
+  const rec = S.dicts.get(code);
+  if (!rec || !rec.ready) return;
+  const cand = [];
+  for (let i = 0; i < rec.keys.length; i++) {
+    const k = rec.keys[i][0];
+    if (k.length >= 2 && k.length <= 5 && /^[\u4e00-\u9fa5]+$/.test(k) && plain.includes(k)) cand.push(k);
+  }
+  if (!cand.length) return;
+  cand.sort((a, b) => b.length - a.length);
+  const uniq = [...new Set(cand)].slice(0, 220);
+  if (!uniq.length) return;
+  const re = new RegExp('(' + uniq.map(reEsc).join('|') + ')', 'g');
+
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  let n;
+  while ((n = walker.nextNode())) {
+    if (!n.nodeValue.trim()) continue;
+    if (n.parentNode.nodeName === 'MARK' || n.parentNode.classList?.contains('kw')) continue;
+    if (n.parentNode.classList?.contains('sec')) continue;
+    nodes.push(n);
+  }
+  let budget = 100;
+  for (const node of nodes) {
+    if (budget <= 0) break;
+    const t = node.nodeValue;
+    re.lastIndex = 0;
+    if (!re.test(t)) continue;
+    re.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0, m, hit = 0;
+    while ((m = re.exec(t))) {
+      if (m.index > last) frag.appendChild(document.createTextNode(t.slice(last, m.index)));
+      const sp = document.createElement('span');
+      sp.className = 'kw'; sp.textContent = m[0];
+      frag.appendChild(sp);
+      last = m.index + m[0].length;
+      if (++hit >= 5) break;
+    }
+    if (last < t.length) frag.appendChild(document.createTextNode(t.slice(last)));
+    node.parentNode.replaceChild(frag, node);
+    budget -= hit;
+  }
+  el.querySelectorAll('.kw').forEach(sp => sp.onclick = () => {
+    $('#q').value = sp.textContent; S.q = sp.textContent;
+    $('#mode').value = 'prefix'; S.mode = 'prefix';
+    switchScope(code).then(doSearch);
+  });
+}
+
+/* ---------- 事件 ---------- */
+let tid = null;
+$('#q').addEventListener('input', e => {
+  const v = e.target.value;
+  $('#clearBtn').style.display = v ? 'block' : 'none';
+  clearTimeout(tid);
+  tid = setTimeout(async () => {
+    if (S.mode === 'full' || (S.scope !== 'all' && !S.dicts.get(S.scope)?.ready)) await ensureScopeLoaded();
+    S.q = v;
+    doSearch();
+  }, 160);
+});
+$('#clearBtn').onclick = () => { $('#q').value = ''; S.q = ''; $('#clearBtn').style.display = 'none'; renderHits(); renderHome(); $('#q').focus(); };
+$('#scope').onchange = e => switchScope(e.target.value);
+$('#mode').onchange = e => { S.mode = e.target.value; if (S.q) doSearch(); };
+
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && document.activeElement !== $('#q')) { e.preventDefault(); $('#q').focus(); return; }
+  if (document.activeElement === $('#q')) {
+    if (e.key === 'Enter' && S.hits.length) { e.preventDefault(); showEntry(S.pos < 0 ? 0 : S.pos); }
+    if (e.key === 'Escape') $('#clearBtn').click();
+    return;
+  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!S.hits.length) return;
+    e.preventDefault();
+    let p = S.pos + (e.key === 'ArrowDown' ? 1 : -1);
+    showEntry(Math.max(0, Math.min(S.hits.length - 1, p)));
+  }
+});
+
+/* ---------- 启动 ---------- */
+(async function boot() {
+  document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') === 'light' ? 'light' : 'dark';
+  const t0 = performance.now();
+  $('#stL').innerHTML = '<span class="spin"></span>载入索引…';
+  try {
+    await loadIndex();
+    renderTabs();
+    await loadDict('zycd');                    // 首屏载入最常用的中医大辞典
+    renderHome();
+    renderHits();
+    $('#stL').textContent = '就绪';
+    $('#stR').textContent = `${S.index.length} 部 · ${S.index.reduce((s, d) => s + d.count, 0).toLocaleString()} 条 · ${Math.round(performance.now() - t0)}ms`;
+    // 支持 ?q=词 直达查询、&dict=code 指定词典
+    const usp = new URLSearchParams(location.search);
+    const dq = usp.get('q') || usp.get('text');
+    if (dq) {
+      if (usp.get('dict')) { await switchScope(usp.get('dict')); }
+      $('#q').value = dq; S.q = dq;
+      await doSearch();
+    }
+    // 后台补齐其余小词典的词头索引（大词典保持按需）
+    (async () => {
+      for (const d of S.index) {
+        if (d.code !== 'zycd') await loadDict(d.code);
+      }
+      toast('词典已全部就绪');
+    })();
+  } catch (e) {
+    $('#stL').textContent = '载入失败';
+    $('#view').innerHTML = `<div class="home"><h2>数据载入失败</h2>
+      <p class="tip">${esc(e.message)}<br><br>请确认插件目录 <code>plugins/dict/data/</code> 下有 index.json 与各词典文件。<br>
+      若直接双击打开 HTML，浏览器会阻止 file:// 读取数据，请通过「学习工具平台」打开。</p></div>`;
+  }
+})();
+</script>
+
+<script>
+/* Reader 插件契约（方案 §3.2）：
+   - ?action=&text= 首屏就出结果（text 已在上面 boot 里当 ?q= 处理）；
+   - message 收到 lt-plugin-context 时换词重查，不要求用户再点一次。 */
+(function () {
+  function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+  }
+  function currentQuery() {
+    var box = document.getElementById('q');
+    return box ? box.value.trim() : '';
+  }
+  function retrigger(text) {
+    var box = document.getElementById('q');
+    if (!box || !text) return;
+    box.value = text;
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  var params = new URLSearchParams(location.search);
+  applyTheme(params.get('theme') || 'dark');
+
+  window.addEventListener('message', function (event) {
+    var data = event.data;
+    if (!data || data.type !== 'lt-plugin-context') return;
+    applyTheme(data.theme);
+    retrigger(data.text);
+  });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var bar = document.createElement('div');
+    bar.className = 'lt-plugin-bar';
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = '在书中搜此词';
+    button.addEventListener('click', function () {
+      var text = currentQuery();
+      if (!text) return;
+      parent.postMessage({ type: 'lt-plugin-event', event: 'search-in-book', text: text }, '*');
+    });
+    bar.appendChild(button);
+    document.body.appendChild(bar);
+  });
+})();
+</script>
+</body>
+</html>

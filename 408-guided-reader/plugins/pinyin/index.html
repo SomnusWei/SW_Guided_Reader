@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<title>拼音标注</title>
+<style>
+  :root {
+    --lt-bg: #1b1b1f;
+    --lt-panel: #24242a;
+    --lt-panel-2: #2c2c34;
+    --lt-border: #3a3a44;
+    --lt-text: #e6e6ea;
+    --lt-muted: #9a9aa6;
+    --lt-accent: #8f88e8;
+    --lt-accent-dim: #4a4470;
+    --lt-pin: #b9b3f0;
+    --lt-code-bg: #1a1a20;
+  }
+  html[data-theme="light"] {
+    --lt-bg: #faf8f3;
+    --lt-panel: #ffffff;
+    --lt-panel-2: #f2efe8;
+    --lt-border: #ddd6c9;
+    --lt-text: #23201b;
+    --lt-muted: #6d675c;
+    --lt-accent: #5a4fcf;
+    --lt-accent-dim: #ded8ff;
+    --lt-pin: #4b3fb5;
+    --lt-code-bg: #f0ece3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 22px 20px 60px;
+    background: var(--lt-bg);
+    color: var(--lt-text);
+    font-family: "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 6px; }
+  .sub { color: var(--lt-muted); font-size: 13px; margin: 0 0 20px; }
+  .label {
+    font-size: 12px; color: var(--lt-muted);
+    letter-spacing: .04em; margin-bottom: 7px; display: block;
+  }
+  textarea {
+    width: 100%; min-height: 104px; resize: vertical;
+    background: var(--lt-panel); color: var(--lt-text);
+    border: 1px solid var(--lt-border); border-radius: 10px;
+    padding: 13px; font-family: inherit; font-size: 15px; line-height: 1.9;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--lt-accent); }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0 6px; }
+  .seg { display: flex; background: var(--lt-panel); border: 1px solid var(--lt-border); border-radius: 9px; overflow: hidden; }
+  .seg button {
+    background: transparent; border: 0; color: var(--lt-muted);
+    padding: 8px 15px; font-family: inherit; font-size: 13px; cursor: pointer;
+  }
+  .seg button.on { background: var(--lt-accent); color: #fff; }
+  .seg button:hover:not(.on) { color: var(--lt-text); }
+  .chk {
+    display: flex; align-items: center; gap: 6px;
+    color: var(--lt-muted); font-size: 13px; cursor: pointer; user-select: none;
+  }
+  .chk input { accent-color: var(--lt-accent); }
+  .outbox {
+    background: var(--lt-panel); border: 1px solid var(--lt-border); border-radius: 10px;
+    padding: 16px 18px; min-height: 128px;
+    font-family: "Songti SC", "SimSun", serif;
+    font-size: 17px; line-height: 2.9;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .outbox .pin { color: var(--lt-pin); font-family: "Segoe UI", Arial, sans-serif; font-size: 13px; }
+  .outbox sup { font-size: 9pt; color: var(--lt-pin); font-family: "Segoe UI", Arial, sans-serif; }
+  .outbox ruby { ruby-position: over; }
+  .outbox rt {
+    font-size: 10pt; color: var(--lt-pin); font-family: "Segoe UI", Arial, sans-serif;
+    font-weight: 400; letter-spacing: .02em;
+  }
+  .bar { display: flex; gap: 10px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+  button.primary {
+    background: var(--lt-accent); color: #fff; border: 0;
+    padding: 8px 16px; border-radius: 8px; font-family: inherit;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  button.primary:hover { filter: brightness(1.08); }
+  button.ghost {
+    background: var(--lt-panel-2); color: var(--lt-text);
+    border: 1px solid var(--lt-border);
+  }
+  .status { font-size: 12px; color: var(--lt-muted); }
+  .hint {
+    margin-top: 22px; padding: 13px 16px; background: var(--lt-panel-2);
+    border-left: 3px solid var(--lt-accent); border-radius: 0 8px 8px 0;
+    font-size: 12.5px; color: var(--lt-muted); line-height: 1.85;
+  }
+  .hint b { color: var(--lt-text); font-weight: 600; }
+  .hint code {
+    background: var(--lt-code-bg); padding: 1px 5px; border-radius: 4px;
+    font-size: 12px; color: var(--lt-pin);
+  }
+  .readings { margin-top: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .readings input {
+    width: 108px; padding: 6px 9px; background: var(--lt-panel);
+    color: var(--lt-text); border: 1px solid var(--lt-border); border-radius: 7px;
+    font-family: inherit; font-size: 13px; outline: none;
+  }
+  .readings input:focus { border-color: var(--lt-accent); }
+  .readings button {
+    padding: 6px 12px; cursor: pointer; font-family: inherit; font-size: 12.5px;
+    color: var(--lt-text); background: var(--lt-panel-2);
+    border: 1px solid var(--lt-border); border-radius: 7px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>拼音标注</h1>
+  <p class="sub">粘贴中文，生成带拼音的文本；选中文字后点「拼音」会自动填进来。</p>
+
+  <label class="label">原文</label>
+  <textarea id="input" placeholder="粘贴要注音的中文…">足三里，位于犊鼻下三寸，是足阳明胃经的合穴。主治胃痛、腹胀、呕吐。</textarea>
+
+  <div class="row">
+    <div class="seg" id="modes">
+      <button data-mode="ruby" class="on">叠字注音</button>
+      <button data-mode="paren">括号式</button>
+      <button data-mode="sup">上标式</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="toneNum"> 声调用数字</label>
+  </div>
+
+  <label class="label" style="margin-top:16px">结果</label>
+  <div class="outbox" id="output"></div>
+
+  <div class="bar">
+    <button class="primary" id="copyRuby">复制 ruby（可粘网页）</button>
+    <button class="primary ghost" id="copySup">复制上标版（OneNote）</button>
+    <button class="primary ghost" id="copyPlain">复制纯文本</button>
+    <span class="status" id="status">字数 <b id="count">0</b></span>
+  </div>
+
+  <div class="readings">
+    <span class="label" style="margin:0 2px 0 0">追加纠音</span>
+    <input id="addWord" placeholder="词，如 荥穴" aria-label="词">
+    <input id="addPin" placeholder="拼音，如 xíng xué" aria-label="拼音">
+    <button id="addBtn" type="button">记到本机</button>
+    <span class="status" id="readingsStatus"></span>
+  </div>
+
+  <div class="hint">
+    <b>复制格式</b>：<code>ruby</code> 是最接近注音的呈现，粘到支持 HTML 的地方（网页、Word）会保留；
+    上标版按 <code>字<sup>pīn</sup></code> 生成，粘进 OneNote 保留上标；纯文本只留「字(pīn)」。<br>
+    <b>中医术语纠音已内置</b>：荥(xíng)、俞(shù)、膻中(dàn zhōng)、率谷、曲池、少商、瘈脉、蠡沟等；
+    「追加纠音」只写本机（localStorage），不动插件目录。<b>生僻穴名仍可能出错，交付前请扫一遍。</b>
+  </div>
+</div>
+
+<script src="./pinyin-pro.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // 随包纠音表（§6.2：抽成 JSON 便于追加；用户追加的存 localStorage）
+  var BUILTIN_READINGS = {
+    '俞穴': 'shù xué', '俞府': 'shù fǔ', '膻中': 'dàn zhōng',
+    '率谷': 'shuài gǔ', '瘈脉': 'chì mài', '蠡沟': 'lǐ gōu',
+    '曲池': 'qū chí', '曲垣': 'qū yuán', '曲鬓': 'qū bìn',
+    '曲泽': 'qū zé', '曲泉': 'qū quán', '商曲': 'shāng qū',
+    '少商': 'shào shāng', '少海': 'shào hǎi', '少冲': 'shào chōng',
+    '少泽': 'shào zé', '少府': 'shào fǔ',
+    '大都': 'dà dū', '阴都': 'yīn dū'
+  };
+  var STORAGE_KEY = 'lt-pinyin-readings';
+
+  var mode = 'ruby';
+  var input = document.getElementById('input');
+  var output = document.getElementById('output');
+  var status = document.getElementById('status');
+  var countEl = document.getElementById('count');
+  var readingsStatus = document.getElementById('readingsStatus');
+  var lastLines = [];   // 每行一个 detail 数组
+  var dictReady = false;
+
+  function loadExtraReadings() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      var parsed = raw ? JSON.parse(raw) : {};
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch (e) { return {}; }
+  }
+
+  function applyReadings() {
+    var lib = window.pinyinPro;
+    if (!lib || !lib.customPinyin) return;
+    var merged = {};
+    var key;
+    for (key in BUILTIN_READINGS) merged[key] = BUILTIN_READINGS[key];
+    var extra = loadExtraReadings();
+    for (key in extra) {
+      if (typeof extra[key] === 'string' && extra[key].trim()) merged[key] = extra[key];
+    }
+    try { lib.customPinyin(merged); dictReady = true; } catch (e) {}
+  }
+
+  function esc(value) {
+    return String(value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function details(line, toneType) {
+    var pinyin = window.pinyinPro && window.pinyinPro.pinyin;
+    if (!pinyin || !line) return null;
+    var detail;
+    try {
+      detail = pinyin(line, { type: 'all', toneType: toneType });
+    } catch (e) { return null; }
+    if (!detail || detail.length !== Array.from(line).length) return null;
+    for (var k = 0; k < detail.length; k++) {
+      var it = detail[k];
+      if (!it || !it.isZh) continue;
+      if (it.origin === '荥') {
+        it.pinyin = (toneType === 'num') ? 'xing2' : 'xíng';
+      } else if (it.origin === '俞' && k > 0 && detail[k - 1] && detail[k - 1].isZh) {
+        it.pinyin = (toneType === 'num') ? 'shu4' : 'shù';
+      }
+    }
+    return detail;
+  }
+
+  // 三种渲染：同一份 detail，三种排布
+  function renderRuby(detail) {
+    var html = '';
+    detail.forEach(function (d) {
+      if (d.isZh && d.pinyin) {
+        html += '<ruby>' + esc(d.origin) + '<rt>' + esc(d.pinyin) + '</rt></ruby>';
+      } else {
+        html += esc(d.origin);
+      }
+    });
+    return html;
+  }
+
+  function renderParen(detail) {
+    var html = '';
+    detail.forEach(function (d) {
+      if (d.isZh && d.pinyin) {
+        html += esc(d.origin) + '<span class="pin">(' + esc(d.pinyin) + ')</span>';
+      } else {
+        html += esc(d.origin);
+      }
+    });
+    return html;
+  }
+
+  function renderSup(detail) {
+    var html = '';
+    detail.forEach(function (d) {
+      if (d.isZh && d.pinyin) {
+        html += esc(d.origin) + '<sup>' + esc(d.pinyin) + '</sup>';
+      } else {
+        html += esc(d.origin);
+      }
+    });
+    return html;
+  }
+
+  function plainOf(detail) {
+    var text = '';
+    detail.forEach(function (d) {
+      if (d.isZh && d.pinyin) text += d.origin + '(' + d.pinyin + ')';
+      else text += d.origin;
+    });
+    return text;
+  }
+
+  function renderer(name) {
+    if (name === 'paren') return renderParen;
+    if (name === 'sup') return renderSup;
+    return renderRuby;
+  }
+
+  function toneType() {
+    return document.getElementById('toneNum').checked ? 'num' : 'symbol';
+  }
+
+  function render() {
+    if (!dictReady) applyReadings();
+    var raw = input.value;
+    var tone = toneType();
+    countEl.textContent = Array.from(raw.replace(/\s/g, '')).length;
+
+    var draw = renderer(mode);
+    lastLines = raw.split('\n').map(function (line) { return details(line, tone); });
+    output.innerHTML = lastLines.map(function (detail, index) {
+      if (!detail) return esc(raw.split('\n')[index] || '');
+      return draw(detail);
+    }).join('<br>');
+  }
+
+  function setStatus(target, message) {
+    var previous = target.textContent;
+    target.textContent = message;
+    setTimeout(function () {
+      target.textContent = target === status ? '字数 ' + countEl.textContent : previous;
+    }, 2200);
+  }
+
+  async function copyRich(html, plain, label) {
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        var item = new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([plain], { type: 'text/plain' })
+        });
+        await navigator.clipboard.write([item]);
+        setStatus(status, label);
+        return;
+      }
+      throw new Error('no clipboard api');
+    } catch (e) {
+      var range = document.createRange();
+      range.selectNodeContents(output);
+      var selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      try {
+        document.execCommand('copy');
+        setStatus(status, label + '（选区方式）');
+      } catch (err) {
+        setStatus(status, '复制失败，请手动选中');
+      }
+      selection.removeAllRanges();
+    }
+  }
+
+  function buildAll(draw) {
+    var tone = toneType();
+    var lines = input.value.split('\n');
+    var html = [];
+    var plain = [];
+    lines.forEach(function (line) {
+      var detail = details(line, tone);
+      html.push(detail ? draw(detail) : esc(line));
+      plain.push(detail ? plainOf(detail) : line);
+    });
+    return { html: html.join('<br>'), plain: plain.join('\n') };
+  }
+
+  function copyPlainText() {
+    var text = buildAll(plainOf).plain;
+    navigator.clipboard.writeText(text).then(function () {
+      setStatus(status, '已复制纯文本');
+    }).catch(function () {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setStatus(status, '已复制纯文本');
+    });
+  }
+
+  document.getElementById('modes').addEventListener('click', function (event) {
+    var button = event.target.closest('button');
+    if (!button) return;
+    mode = button.dataset.mode;
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function (item) {
+      item.classList.toggle('on', item === button);
+    });
+    render();
+  });
+
+  document.getElementById('toneNum').addEventListener('change', render);
+  input.addEventListener('input', render);
+  document.getElementById('copyRuby').addEventListener('click', function () {
+    var out = buildAll(renderRuby);
+    copyRich(out.html, out.plain, '已复制 ruby 版');
+  });
+  document.getElementById('copySup').addEventListener('click', function () {
+    var out = buildAll(renderSup);
+    copyRich(out.html, out.plain, '已复制上标版');
+  });
+  document.getElementById('copyPlain').addEventListener('click', copyPlainText);
+
+  document.getElementById('addBtn').addEventListener('click', function () {
+    var word = document.getElementById('addWord').value.trim();
+    var pin = document.getElementById('addPin').value.trim();
+    if (!word || !pin) {
+      setStatus(readingsStatus, '词和拼音都要填');
+      return;
+    }
+    var extra = loadExtraReadings();
+    extra[word] = pin;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(extra));
+      dictReady = false;
+      applyReadings();
+      render();
+      setStatus(readingsStatus, '已记录 ' + word);
+    } catch (e) {
+      setStatus(readingsStatus, '本机存储不可用');
+    }
+  });
+
+  /* ---------- Reader 插件契约（方案 §3.2） ---------- */
+  function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+  }
+
+  function fill(text) {
+    if (!text) return;
+    input.value = text;
+    render();
+  }
+
+  var params = new URLSearchParams(location.search);
+  applyTheme(params.get('theme') || 'dark');
+  if (params.get('text')) fill(params.get('text'));
+
+  window.addEventListener('message', function (event) {
+    var data = event.data;
+    if (!data || data.type !== 'lt-plugin-context') return;
+    applyTheme(data.theme);
+    if (data.text) fill(data.text);
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

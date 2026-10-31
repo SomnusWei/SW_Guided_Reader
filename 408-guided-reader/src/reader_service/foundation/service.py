@@ -1,0 +1,390 @@
+from __future__ import annotations
+
+import json
+import threading
+import unicodedata
+from functools import lru_cache
+from contextlib import closing
+from pathlib import Path
+from typing import Callable
+
+from reader_service.library import LibraryService
+from reader_service.pdf_limits import validate_render_size
+from reader_service.visual_region import PDFIUM_RENDER_LOCK
+
+from .contracts import OcrEngine, PagePreparationError
+from .embedded import probe_embedded_text
+from .geometry import reading_order
+from .repository import FoundationRepository
+
+
+class FoundationService:
+    def __init__(
+        self,
+        library: LibraryService,
+        repository: FoundationRepository,
+        engine_factory: Callable[[], OcrEngine],
+        render_dpi: int = 200,
+    ):
+        self.library = library
+        self.repository = repository
+        self.engine_factory = engine_factory
+        self.render_dpi = render_dpi
+        self._local = threading.local()
+        # PDFium has process-wide mutable state; OCR may run on two workers,
+        # but page opening, text probing, and rendering must be serialized.
+        self._pdfium_lock = PDFIUM_RENDER_LOCK
+
+    def ensure_revision(self, revision_id: str) -> dict:
+        revision = self.library.revision(revision_id)
+        self.repository.ensure_pages(
+            revision_id, revision["page_count"], revision["foundation_version"]
+        )
+        return revision
+
+    def statuses(self, revision_id: str) -> list[dict]:
+        self.ensure_revision(revision_id)
+        return self.repository.page_statuses(revision_id)
+
+    def search(self, revision_id: str, query: str, *, limit: int = 100) -> dict:
+        # Search is deliberately read-only: it neither creates status rows nor schedules OCR.
+        revision = self.library.revision(revision_id)
+        if not isinstance(query, str):
+            raise ValueError("Search query must be text")
+        if len(query) > 120:
+            raise ValueError("Search query must be at most 120 characters")
+        if limit < 1 or limit > 100:
+            raise ValueError("Search result limit must be between 1 and 100")
+        with self.repository.database.connect() as connection:
+            connection.execute("BEGIN")
+            needle = self._normalize_search_text(query)
+            counts, lines = self.repository.search_snapshot(revision_id, connection=connection)
+            coverage = {
+                "ready_pages": counts["READY"],
+                "total_pages": revision["page_count"],
+                "complete": counts["READY"] == revision["page_count"],
+                "statuses": counts,
+            }
+            if not needle:
+                return {"query": query, "coverage": coverage, "results": [], "truncated": False}
+
+            pages: dict[int, list[dict]] = {}
+            for line in lines:
+                pages.setdefault(line["pdf_page_index"], []).append(line)
+            matches = []
+            truncated = False
+            for page_index, page_lines in pages.items():
+                source = "\n".join(line["text"] for line in page_lines)
+                # Scan using exactly the existing per-character normalization.
+                # Source offsets are needed only for an actual match, not every
+                # character of every page on each keystroke.
+                normalized = "".join(map(self._normalized_character, source))
+                position = normalized.find(needle)
+                if position < 0:
+                    continue
+                if len(matches) >= limit:
+                    truncated = True
+                    break
+                start, end = self._search_source_range(source, position, position + len(needle))
+                snippet_start = max(0, start - 32)
+                snippet_end = min(len(source), end + 48)
+                prefix = "…" if snippet_start else ""
+                suffix = "…" if snippet_end < len(source) else ""
+                snippet = source[snippet_start:snippet_end].replace("\n", " ").strip()
+                matches.append({
+                    "pdf_page_index": page_index,
+                    "snippet": prefix + snippet + suffix,
+                    # These are transient runtime positions nested in the search response. They are
+                    # never persisted or treated as durable anchor identity.
+                    "match_ranges": self._search_match_ranges(
+                        self.repository.search_page_lines(
+                            revision_id, page_index, connection=connection, decode_cells=False
+                        ), start, end
+                    ),
+                })
+            return {"query": query, "coverage": coverage, "results": matches, "truncated": truncated}
+
+    @staticmethod
+    def _normalize_search_text(value: str) -> str:
+        return "".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+    @staticmethod
+    @lru_cache(maxsize=4096)
+    def _normalized_character(character):
+        return FoundationService._normalize_search_text(character)
+
+    @classmethod
+    def _search_source_range(cls, value: str, first: int, end: int) -> tuple[int, int]:
+        offset = 0
+        source_start = None
+        for index, character in enumerate(value):
+            offset += len(cls._normalized_character(character))
+            if source_start is None and offset > first:
+                source_start = index
+            if source_start is not None and offset >= end:
+                return source_start, index + 1
+        raise ValueError("Search match is outside the source text")
+
+    @staticmethod
+    def _search_match_ranges(
+        lines: list[dict], source_start: int, source_end: int
+    ) -> list[dict]:
+        ranges = []
+        line_start = 0
+        for line in lines:
+            text = line["text"]
+            line_end = line_start + len(text)
+            local_start = max(0, source_start - line_start)
+            local_end = min(len(text), source_end - line_start)
+            if local_end > local_start:
+                cells = line.get("cells")
+                if cells is None:
+                    cells = json.loads(line["cells_json"])
+                selected = [
+                    index for index, cell in enumerate(cells)
+                    if int(cell[3]) > local_start and int(cell[2]) < local_end
+                ]
+                if selected:
+                    ranges.append({
+                        "line_ordinal": line["line_ordinal"],
+                        "cell_start": selected[0],
+                        "cell_end": selected[-1] + 1,
+                    })
+            line_start = line_end + 1
+        return ranges
+
+    def overlay(self, revision_id: str, page_index: int) -> dict:
+        revision = self.ensure_revision(revision_id)
+        if page_index < 0 or page_index >= revision["page_count"]:
+            raise ValueError("Page index is outside this PDF")
+        result = self.repository.overlay(revision_id, page_index)
+        if result is None:
+            raise LookupError("Preparation state not found")
+        return result
+
+    def resolve_text_selection(
+        self,
+        revision_id: str,
+        page_index: int,
+        *,
+        start: dict,
+        end: dict,
+        context_length: int = 12,
+    ) -> dict:
+        """Resolve transient line/cell positions into a provider-neutral durable anchor."""
+        page = self.overlay(revision_id, page_index)
+        if page["status"] != "READY":
+            raise ValueError("Text selection is not available until this page is prepared")
+        lines = page["lines"]
+        if not lines:
+            raise ValueError("This page has no selectable text")
+        first = self._selection_point(start, lines)
+        last = self._selection_point(end, lines)
+        if (first[0], first[1]) > (last[0], last[1]):
+            first, last = last, first
+
+        line_offsets: list[int] = []
+        offset = 0
+        for line_index, line in enumerate(lines):
+            line_offsets.append(offset)
+            offset += len(line["text"])
+            if line_index + 1 < len(lines):
+                offset += 1
+        page_text = "\n".join(line["text"] for line in lines)
+
+        selected: list[str] = []
+        quads: list[list[list[float]]] = []
+        global_start = None
+        global_end = None
+        for line_index in range(first[0], last[0] + 1):
+            line = lines[line_index]
+            cell_start = first[1] if line_index == first[0] else 0
+            cell_end = last[1] if line_index == last[0] else len(line["cells"])
+            if cell_end <= cell_start:
+                continue
+            cells = line["cells"][cell_start:cell_end]
+            char_start = int(cells[0][2])
+            char_end = int(cells[-1][3])
+            if char_start < 0 or char_end > len(line["text"]) or char_end <= char_start:
+                raise ValueError("Stored selectable geometry is inconsistent with its text")
+            selected.append(line["text"][char_start:char_end])
+            ys = [point[1] for point in line["quad"]]
+            x0 = min(float(cell[0]) for cell in cells)
+            x1 = max(float(cell[1]) for cell in cells)
+            y0 = min(ys)
+            y1 = max(ys)
+            if self._uses_vertical_selection_axis(line):
+                height = y1 - y0
+                y0 += height * cell_start / len(line["cells"])
+                y1 = min(ys) + height * cell_end / len(line["cells"])
+            quads.append(
+                [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+            )
+            if global_start is None:
+                global_start = line_offsets[line_index] + char_start
+            global_end = line_offsets[line_index] + char_end
+
+        if not selected or global_start is None or global_end is None:
+            raise ValueError("Select at least one character to create a highlight")
+        quote = "\n".join(selected)
+        return {
+            "quads": quads,
+            "quote": quote,
+            "context_before": page_text[max(0, global_start - context_length):global_start],
+            "context_after": page_text[global_end:global_end + context_length],
+            "foundation_version": page["foundation_version"],
+        }
+
+    @staticmethod
+    def _uses_vertical_selection_axis(line: dict) -> bool:
+        cells = line["cells"]
+        if len(cells) < 2:
+            return False
+        xs = [float(point[0]) for point in line["quad"]]
+        ys = [float(point[1]) for point in line["quad"]]
+        width = max(xs) - min(xs)
+        height = max(ys) - min(ys)
+        if height <= width * 1.5:
+            return False
+        # Anonymous cells intentionally persist x extents only. Require their centers to
+        # collapse onto one column before deriving transient vertical selection geometry.
+        centers = [(float(cell[0]) + float(cell[1])) / 2 for cell in cells]
+        return max(centers) - min(centers) <= max(width * 0.25, 0.004)
+
+    @staticmethod
+    def _selection_point(point: dict, lines: list[dict]) -> tuple[int, int]:
+        if not isinstance(point, dict):
+            raise ValueError("Selection endpoints must be objects")
+        line_ordinal = point.get("line_ordinal")
+        boundary = point.get("boundary")
+        if isinstance(line_ordinal, bool) or not isinstance(line_ordinal, int):
+            raise ValueError("Selection line ordinal must be an integer")
+        if isinstance(boundary, bool) or not isinstance(boundary, int):
+            raise ValueError("Selection cell boundary must be an integer")
+        line_index = next(
+            (index for index, line in enumerate(lines) if line["line_ordinal"] == line_ordinal),
+            None,
+        )
+        if line_index is None:
+            raise ValueError("Selection line is not part of this prepared page")
+        if boundary < 0 or boundary > len(lines[line_index]["cells"]):
+            raise ValueError("Selection cell boundary is outside its line")
+        return line_index, boundary
+
+    def prepare_page(self, revision_id: str, page_index: int) -> str:
+        revision = self.ensure_revision(revision_id)
+        if page_index < 0 or page_index >= revision["page_count"]:
+            raise ValueError("Page index is outside this PDF")
+        if self.repository.page_status(revision_id, page_index) == "READY":
+            return "READY"
+        if not self.repository.mark_preparing(revision_id, page_index):
+            return self.repository.page_status(revision_id, page_index) or "NOT_PREPARED"
+        try:
+            route, profile, lines = self._extract(
+                self.library.pdf_path(revision_id), page_index
+            )
+            self.repository.publish_page(
+                revision_id,
+                page_index,
+                route=route,
+                foundation_version=revision["foundation_version"],
+                engine_profile=profile,
+                lines=reading_order(lines),
+            )
+            return "READY"
+        except PagePreparationError as exc:
+            self.repository.fail_page(revision_id, page_index, exc.code)
+            return "FAILED"
+        except Exception:
+            self.repository.fail_page(revision_id, page_index, "PAGE_PREPARE_FAILED")
+            return "FAILED"
+
+    def repair_empty_ocr_pages(
+        self, revision_id: str, page_start: int, page_end: int
+    ) -> list[int]:
+        """Revisit legacy READY pages with no text only when their scan has content."""
+        candidates = self.repository.empty_ready_ocr_pages(
+            revision_id, page_start, page_end
+        )
+        repaired = []
+        if not candidates:
+            return repaired
+        pdf_path = self.library.pdf_path(revision_id)
+        for page_index in candidates:
+            if not self._page_has_visible_content(pdf_path, page_index):
+                continue
+            if self.repository.reset_empty_ready_ocr_page(revision_id, page_index):
+                self.prepare_page(revision_id, page_index)
+                repaired.append(page_index)
+        return repaired
+
+    def _extract(self, pdf_path: Path, page_index: int):
+        try:
+            import pypdfium2 as pdfium
+
+            with self._pdfium_lock:
+                with closing(pdfium.PdfDocument(pdf_path)) as document:
+                    with closing(document[page_index]) as page:
+                        width, height = page.get_size()
+                        self._validate_render_budget(width, height)
+                        embedded = probe_embedded_text(page, width, height)
+                        if embedded.trustworthy:
+                            return "EMBEDDED", "embedded-positioned-text:v2", list(embedded.lines)
+                        with closing(page.render(scale=self.render_dpi / 72)) as bitmap:
+                            image = bitmap.to_numpy().copy()
+        except PagePreparationError:
+            raise
+        except Exception as exc:
+            raise PagePreparationError("PAGE_RENDER_FAILED", str(exc)) from exc
+        try:
+            engine = self._engine()
+            lines = list(engine.prepare_page(image, (image.shape[1], image.shape[0])))
+            if not lines and self._image_has_visible_content(image):
+                # Empty OCR on a text-heavy scan is occasionally transient. A
+                # second bounded pass is cheaper than silently publishing a hole.
+                lines = list(engine.prepare_page(image, (image.shape[1], image.shape[0])))
+                if not lines:
+                    raise PagePreparationError(
+                        "OCR_EMPTY_ON_NONBLANK_PAGE", "OCR returned no text for a nonblank page"
+                    )
+            return "OCR", engine.profile, lines
+        except PagePreparationError:
+            raise
+        except Exception as exc:
+            raise PagePreparationError("OCR_FAILED", str(exc)) from exc
+
+    @staticmethod
+    def _image_has_visible_content(image) -> bool:
+        sample = image[::6, ::6]
+        if sample.ndim == 3:
+            sample = sample[:, :, :3].min(axis=2)
+        return bool((sample < 220).mean() >= 0.003)
+
+    def _page_has_visible_content(self, pdf_path: Path, page_index: int) -> bool:
+        try:
+            import pypdfium2 as pdfium
+
+            with self._pdfium_lock:
+                with closing(pdfium.PdfDocument(pdf_path)) as document:
+                    with closing(document[page_index]) as page:
+                        self._validate_render_budget(*page.get_size())
+                        with closing(page.render(scale=self.render_dpi / 72)) as bitmap:
+                            image = bitmap.to_numpy()
+                            return self._image_has_visible_content(image)
+        except Exception:
+            # If inspection fails, let the normal page preparation report its
+            # render/recognition failure instead of trusting a zero-line result.
+            return True
+
+    def _engine(self) -> OcrEngine:
+        engine = getattr(self._local, "engine", None)
+        if engine is None:
+            engine = self.engine_factory()
+            self._local.engine = engine
+        return engine
+
+    def _validate_render_budget(self, width, height):
+        try:
+            validate_render_size(width, height, self.render_dpi)
+        except ValueError as exc:
+            raise PagePreparationError("PDF_PAGE_RESOURCE_LIMIT", str(exc)) from exc

@@ -1,0 +1,44 @@
+# Secrets and local environment — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.*
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local runtime, caches, build output and scratch state
+var/
+tmp/
+.tmp/
+.cache/
+*.log
+private-notes/
+
+# Python / Node toolchains selected for R1
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+node_modules/
+test-results/
+playwright-report/
+
+# PyInstaller 打包产物（构建输出，不入库）
+/build/
+/dist/
+sidecar/build/
+sidecar/dist/

@@ -1,0 +1,90 @@
+[
+ {
+  "code": "tcmtb",
+  "name": "中医教材仓库",
+  "group": "教材",
+  "count": 70583,
+  "file": "tcmtb.json",
+  "size": 111.39,
+  "chunks": 137,
+  "chunkSize": 512,
+  "keyIndex": 1.93,
+  "sharded": true
+ },
+ {
+  "code": "ghy",
+  "name": "古汉语常用字字典",
+  "group": "文字",
+  "count": 3933,
+  "file": "ghy.json",
+  "size": 1.71
+ },
+ {
+  "code": "mccd",
+  "name": "中医名词术语选释",
+  "group": "中医",
+  "count": 4926,
+  "file": "mccd.json",
+  "size": 0.98
+ },
+ {
+  "code": "zycd",
+  "name": "中医大辞典",
+  "group": "中医",
+  "count": 36501,
+  "file": "zycd.json",
+  "size": 10.72
+ },
+ {
+  "code": "zbcd",
+  "name": "中医证病名大辞典",
+  "group": "中医",
+  "count": 8696,
+  "file": "zbcd.json",
+  "size": 1.1
+ },
+ {
+  "code": "zjcd",
+  "name": "中国针灸学辞典",
+  "group": "针灸",
+  "count": 7228,
+  "file": "zjcd.json",
+  "size": 1.97
+ },
+ {
+  "code": "kangxi",
+  "name": "康熙字典",
+  "group": "文字",
+  "count": 47223,
+  "file": "kangxi.json",
+  "size": 16.51,
+  "chunks": 92,
+  "chunkSize": 512,
+  "keyIndex": 0.68,
+  "sharded": true
+ },
+ {
+  "code": "bcgm",
+  "name": "本草纲目",
+  "group": "本草",
+  "count": 8897,
+  "file": "bcgm.json",
+  "size": 6.36,
+  "chunks": 11,
+  "chunkSize": 512,
+  "keyIndex": 0.16,
+  "sharded": true
+ },
+ {
+  "code": "swjz",
+  "name": "说文解字",
+  "group": "文字",
+  "count": 17844,
+  "file": "swjz.json",
+  "size": 8.57,
+  "chunks": 20,
+  "chunkSize": 512,
+  "keyIndex": 0.23,
+  "sharded": true
+ }
+]

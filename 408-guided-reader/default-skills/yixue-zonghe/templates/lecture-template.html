@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{讲义标题}</title>
+<style>
+/* ===== 将 templates/lecture-style.css 内容复制到此处 ===== */
+/* ===== 并修改 :root 中的 --primary 主题色 ===== */
+</style>
+</head>
+<body>
+
+<!-- ========== 封面 ========== -->
+<h1>{系统名}系疾病讲义</h1>
+<p>中医内科学 · 以理法方药为核心体系</p>
+
+<!-- ========== 目录 ========== -->
+<div class="toc">
+<h2>目 录</h2>
+<ul>
+  <li class="toc-l1"><a href="#chap-zonglun">上篇 · 总论</a></li>
+  <li class="toc-l2"><a href="#sec-shengli">一、{脏腑}之生理功能与特性</a></li>
+  <li class="toc-l2"><a href="#sec-jiyin">二、{系统}病证病因病机总论</a></li>
+  <li class="toc-l2"><a href="#sec-bianzheng">三、{系统}病证辨证与治疗原则</a></li>
+
+  <li class="toc-l1"><a href="#chap-gebing">中篇 · 各论（理法方药全链路）</a></li>
+  <li class="toc-l2"><a href="#chap-bing1">第一章 {疾病1名称}</a></li>
+  <li class="toc-l3"><a href="#chap-bing1">{证型1} · {证型2} · ...</a></li>
+  <li class="toc-l2"><a href="#chap-bing2">第二章 {疾病2名称}</a></li>
+  <li class="toc-l3"><a href="#chap-bing2">{证型1} · {证型2} · ...</a></li>
+  <!-- 更多疾病... -->
+
+  <li class="toc-l1"><a href="#chap-fulu">下篇 · 附录</a></li>
+  <li class="toc-l2"><a href="#app-fangji">核心方剂速查表</a></li>
+  <li class="toc-l2"><a href="#app-yaowu">核心药物速查表</a></li>
+</ul>
+</div>
+
+<!-- ========== 上篇 · 总论 ========== -->
+<div class="chapter-header" id="chap-zonglun">
+  <div class="num">上 篇</div>
+  <h2>总 论</h2>
+</div>
+
+<h3 id="sec-shengli">一、{脏腑}之生理功能与特性</h3>
+<div class="li-bg">
+<h4>（一）生理特性</h4>
+<p>...（内容填充）...</p>
+<h4>（二）生理功能</h4>
+<p>...（内容填充）...</p>
+<h4>（三）与其他脏腑的关系</h4>
+<p>...（内容填充）...</p>
+</div>
+
+<h3 id="sec-jiyin">二、{系统}病证病因病机总论</h3>
+<div class="li-bg">
+<p>...（内容填充）...</p>
+</div>
+
+<h3 id="sec-bianzheng">三、{系统}病证辨证与治疗原则</h3>
+<div class="fa-bg">
+<h4>辨证要点</h4>
+<p>...（内容填充）...</p>
+<h4>治疗原则</h4>
+<p>...（内容填充）...</p>
+</div>
+
+<div class="note">
+<strong>理法方药体系说明：</strong>本讲义以"理法方药"为核心框架，对每一疾病均按以下链路展开：<br>
+<strong>理</strong>——疾病概念、病因病机、诊断与鉴别诊断<br>
+<strong>法</strong>——辨证要点、治则治法<br>
+<strong>方</strong>——各证型的代表方剂、组成、方解（君臣佐使）<br>
+<strong>药</strong>——方中核心药物的性味归经、功效主治、配伍分析
+</div>
+
+<!-- ========== 中篇 · 各论 ========== -->
+<div class="chapter-header" id="chap-gebing">
+  <div class="num">中 篇</div>
+  <h2>各 论</h2>
+</div>
+
+<!-- ----- 疾病1模板 ----- -->
+<div class="chapter-header" id="chap-bing1">
+  <div class="num">第 一 章</div>
+  <h2>{疾病1名称}</h2>
+</div>
+
+<div class="li-bg">
+<h3>理 · 疾病概论</h3>
+<p><strong>概念：</strong>...</p>
+<h4>病因病机</h4>
+<p>...</p>
+<h4>诊断与鉴别诊断</h4>
+<p>...</p>
+</div>
+
+<div class="fa-bg">
+<h3>法 · 辨证论治纲要</h3>
+<p><strong>治则：</strong>...</p>
+</div>
+
+<h3>方药 · 证治分类</h3>
+
+<div class="zheng-bg">
+<h4>证型一：{证型名称}</h4>
+<p><strong>症状：</strong>...</p>
+<p><strong>治法：</strong>...</p>
+<p><strong>代表方剂：</strong>...</p>
+<p><strong>组成：</strong>...</p>
+<p><strong>方解：</strong>...</p>
+</div>
+
+<!-- 更多证型... -->
+
+<div class="yao-bg">
+<h4>核心药物详解</h4>
+<p><strong>{药物1}</strong>（性味归经）：功效。主治场景。煎服用量。使用注意。</p>
+<p><strong>{药物2}</strong>...</p>
+</div>
+
+<div class="summary-box">
+<strong>{疾病1}小结：</strong>...（100字以内精华总结）...
+</div>
+
+<!-- ----- 疾病2模板：复制以上结构 ----- -->
+
+<!-- ========== 下篇 · 附录 ========== -->
+<div class="chapter-header" id="chap-fulu">
+  <div class="num">下 篇</div>
+  <h2>附 录</h2>
+</div>
+
+<h3 id="app-fangji">附录一 · 核心方剂速查表</h3>
+<table class="formula-table">
+<tr><th>方名</th><th>出处</th><th>组成（要点）</th><th>功用</th><th>主治</th></tr>
+<tr><td>方名1</td><td>出处</td><td>组成</td><td>功用</td><td>主治</td></tr>
+<!-- 更多方剂... -->
+</table>
+
+<h3 id="app-yaowu">附录二 · 核心药物速查表</h3>
+<table class="herb-table">
+<tr><th>药物</th><th>性味</th><th>归经</th><th>功效</th><th>常用场景</th></tr>
+<tr><td>药名1</td><td>性味</td><td>归经</td><td>功效</td><td>场景</td></tr>
+<!-- 更多药物... -->
+</table>
+
+<p style="text-align:center; color:#888; margin-top:30px;">— 讲义完 —</p>
+
+</body>
+</html>

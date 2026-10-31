@@ -1,0 +1,50 @@
+# 构建产物
+_build/launcher/bin/
+_build/launcher/obj/
+_build/launcher/publish/
+
+# 解码前的原始备份（可由 pipeline.py 重新生成）
+_build/data_backup_before_decode/
+
+# MDX 解析临时 stub
+_build/stub/
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+
+# ---- SW_Guided_Reader 仓库边界 ----
+# 依赖
+node_modules/
+408-guided-reader/.venv/
+
+# 构建中间产物与产物
+app/src-tauri/target/
+app/dist/
+app/src-tauri/gen/schemas/
+408-guided-reader/build/
+408-guided-reader/dist/
+408-guided-reader/sidecar/build/
+408-guided-reader/sidecar/dist/
+成品/
+__pycache__/
+*.pyc
+*.pyo
+
+# 运行数据 / 本地大文件（不进仓库）
+Reader/
+dailyread-skill/
+tools/
+test-results/
+408-guided-reader/var/
+408-guided-reader/test-results/
+408-guided-reader/.pytest_cache/
+
+# 本地配置与日志
+.env
+*.log
+
+# 构建同步产物（发布脚本会用 PyInstaller 重建并同步到这里）
+app/src-tauri/binaries/
+# 旧仓库历史备份（本地保留）
+408-guided-reader/.git-backup-408/

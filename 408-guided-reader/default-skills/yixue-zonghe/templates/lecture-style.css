@@ -1,0 +1,272 @@
+/* ============================================================
+   中医讲义 CSS 样式模板 v1.0
+   使用方法：将此文件内容复制到 HTML 的 <style> 标签中
+   主题色：修改 :root 中的 --primary 等变量即可切换
+   ============================================================ */
+
+/* ---------- CSS 变量系统 ---------- */
+:root {
+  /* 主题色（根据系统修改） */
+  --primary: #1a4a3a;       /* 主色（墨绿-肺系） */
+  --primary-light: #2a6e3a;  /* 浅色 */
+  --primary-dark: #0e2e24;   /* 深色 */
+  
+  /* 理法方药四色块 */
+  --li-bg: #fffaf0;          /* 理-金色 */
+  --li-border: #d4a017;
+  --fa-bg: #f0f7f0;          /* 法-绿色 */
+  --fa-border: #4caf50;
+  --zheng-bg: #f5efe6;       /* 方-土色 */
+  --zheng-border: #6b1a1a;
+  --yao-bg: #fdf0f5;         /* 药-玫红 */
+  --yao-border: #c2185b;
+  
+  /* 通用 */
+  --text-main: #2c2c2c;
+  --text-secondary: #666;
+  --text-muted: #999;
+  --bg-page: #f5f3ef;
+  --bg-white: #ffffff;
+  --border-color: #ddd;
+  --table-header-bg: var(--primary);
+  --table-stripe: #f9f7f4;
+  --note-bg: #eef5fa;
+  --note-border: #3a7ec0;
+  --warn-bg: #fbe9e7;
+  --warn-border: #e53935;
+  --tip-bg: #e8f5e9;
+  --tip-border: #4caf50;
+}
+
+/* ---------- 基础排版 ---------- */
+@page { size: A4; margin: 2.2cm 2cm; }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: "SimSun", "Songti SC", "Noto Serif SC", "Source Han Serif SC", serif;
+  font-size: 11pt;
+  line-height: 1.85;
+  color: var(--text-main);
+  background: var(--bg-page);
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 50px;
+}
+
+h1, h2, h3, h4, h5 {
+  font-family: "SimHei", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  color: var(--primary);
+  margin-top: 24px;
+  margin-bottom: 12px;
+}
+
+h1 {
+  font-size: 24pt;
+  text-align: center;
+  border-bottom: 3px double var(--primary);
+  padding-bottom: 16px;
+  margin-bottom: 8px;
+}
+h1 + p { text-align: center; color: var(--text-muted); font-size: 11pt; }
+
+h2 {
+  font-size: 17pt;
+  text-align: center;
+  letter-spacing: 6px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+}
+
+h3 {
+  font-size: 13pt;
+  color: var(--primary-light);
+  border-left: 3px solid var(--primary-light);
+  padding-left: 8px;
+}
+
+h4 { font-size: 11.5pt; color: #444; }
+
+p { margin: 8px 0; text-indent: 2em; }
+p:first-child { text-indent: 2em; }
+strong { color: var(--primary); }
+
+/* ---------- 目录 ---------- */
+.toc { page-break-after: always; }
+.toc h2 { border-bottom: none; }
+.toc ul { list-style: none; margin-left: 0; }
+.toc li { margin: 5px 0; }
+.toc .toc-l1 {
+  font-family: "SimHei", "Microsoft YaHei", sans-serif;
+  font-size: 13pt;
+  color: var(--primary);
+  margin-top: 14px;
+}
+.toc .toc-l2 { font-size: 11pt; margin-left: 2em; color: #444; }
+.toc .toc-l3 { font-size: 10.5pt; margin-left: 4em; color: #666; }
+.toc a { text-decoration: none; color: inherit; }
+.toc a:hover { text-decoration: underline; color: var(--primary-light); }
+[id] { scroll-margin-top: 20px; }
+
+/* ---------- 章节标题 ---------- */
+.chapter-header {
+  text-align: center;
+  page-break-before: always;
+  margin: 30px 0 20px;
+}
+.chapter-header .num {
+  font-family: "SimHei", "Microsoft YaHei", sans-serif;
+  font-size: 12pt;
+  color: var(--text-muted);
+  letter-spacing: 4px;
+  margin-bottom: 6px;
+}
+.chapter-header h2 { border: none; }
+
+/* ---------- 理法方药色块 ---------- */
+.li-bg {
+  background: var(--li-bg);
+  border-left: 4px solid var(--li-border);
+  padding: 10px 16px;
+  margin: 10px 0;
+  border-radius: 0 4px 4px 0;
+}
+.li-bg h3 { border: none; color: #8b6914; }
+
+.fa-bg {
+  background: var(--fa-bg);
+  border-left: 4px solid var(--fa-border);
+  padding: 10px 16px;
+  margin: 10px 0;
+  border-radius: 0 4px 4px 0;
+}
+.fa-bg h3 { border: none; color: #2e7d32; }
+
+.zheng-bg {
+  background: var(--zheng-bg);
+  border-left: 4px solid var(--zheng-border);
+  padding: 10px 16px;
+  margin: 12px 0;
+  border-radius: 0 4px 4px 0;
+}
+.zheng-bg h4 { color: var(--zheng-border); margin-top: 8px; }
+
+.yao-bg {
+  background: var(--yao-bg);
+  border-left: 4px solid var(--yao-border);
+  padding: 10px 16px;
+  margin: 12px 0;
+  border-radius: 0 4px 4px 0;
+}
+.yao-bg h4 { color: #8b1a4a; margin-top: 10px; }
+
+/* ---------- 提示框 ---------- */
+.note {
+  background: var(--note-bg);
+  border-left: 4px solid var(--note-border);
+  padding: 10px 16px;
+  margin: 10px 0;
+  border-radius: 0 4px 4px 0;
+}
+.warn {
+  background: var(--warn-bg);
+  border-left: 4px solid var(--warn-border);
+  padding: 10px 16px;
+  margin: 10px 0;
+  border-radius: 0 4px 4px 0;
+}
+.tip {
+  background: var(--tip-bg);
+  border-left: 4px solid var(--tip-border);
+  padding: 10px 16px;
+  margin: 10px 0;
+  border-radius: 0 4px 4px 0;
+}
+.summary-box {
+  background: #fff8e1;
+  border: 1px solid #e0c060;
+  padding: 10px 16px;
+  margin: 14px 0;
+  border-radius: 6px;
+}
+
+/* ---------- 表格 ---------- */
+.formula-table, .herb-table, .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 9.5pt;
+}
+.formula-table th, .formula-table td,
+.herb-table th, .herb-table td,
+.data-table th, .data-table td {
+  border: 1px solid #bbb;
+  padding: 5px 8px;
+  text-align: left;
+}
+.formula-table th, .herb-table th, .data-table th {
+  background: var(--table-header-bg);
+  color: #fff;
+}
+.formula-table tr:nth-child(even),
+.herb-table tr:nth-child(even),
+.data-table tr:nth-child(even) {
+  background: var(--table-stripe);
+}
+
+/* ---------- 代码/方剂组成 ---------- */
+code {
+  font-family: "Consolas", "Courier New", monospace;
+  background: #f0ede8;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10pt;
+  color: #c0392b;
+}
+pre {
+  background: #2c3e50;
+  color: #ecf0f1;
+  padding: 14px 18px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 12px 0;
+  font-size: 9.5pt;
+  line-height: 1.5;
+}
+pre code { background: none; color: inherit; padding: 0; }
+
+/* ---------- 分隔线 ---------- */
+hr.divider {
+  border: none;
+  border-top: 1px dashed #ccc;
+  margin: 24px 0;
+}
+
+/* ---------- 列表 ---------- */
+ul, ol { margin: 8px 0 8px 1.8em; }
+li { margin: 4px 0; }
+
+/* ---------- 打印优化 ---------- */
+@media print {
+  body {
+    background: #fff;
+    padding: 0;
+    max-width: none;
+  }
+  .zheng-bg, .yao-bg, .li-bg, .fa-bg, .note, .warn, .tip {
+    page-break-inside: avoid;
+  }
+  h3, h4 { page-break-after: avoid; }
+  table { page-break-inside: avoid; }
+  .summary-box { page-break-inside: avoid; }
+}
+
+/* ---------- 主题色预设 ---------- */
+/* 肺系：--primary: #1a4a3a（已设为默认） */
+/* 心系：--primary: #6b1a1a */
+/* 脾胃系：--primary: #8b6914 */
+/* 肝胆系：--primary: #2a6e3a */
+/* 肾系：--primary: #1a3a6b */
+/* 脑系：--primary: #4a1a6b */
+/* 气血津液：--primary: #8b1a4a */
+/* 肢体经络：--primary: #6b4a1a */

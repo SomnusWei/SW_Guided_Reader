@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>笔记 · Guided Reader</title>
+<link rel="stylesheet" href="/theme.css">
+<link rel="icon" href="data:,">
+<script>
+  /* 首屏防闪：与 Reader 主页同一套逻辑，偏好由服务端注入到 <html data-theme-pref>。 */
+  (function () {
+    var root = document.documentElement;
+    var pref = root.getAttribute("data-theme-pref");
+    if (!pref) {
+      try { pref = localStorage.getItem("lt-theme") || "system"; } catch (e) { pref = "system"; }
+    }
+    var dark = pref === "dark";
+    if (pref === "system") {
+      try { dark = window.matchMedia("(prefers-color-scheme: dark)").matches; } catch (e) { dark = false; }
+    }
+    root.setAttribute("data-theme", dark ? "dark" : "light");
+    root.setAttribute("data-theme-pref", pref);
+  })();
+</script>
+<link rel="stylesheet" href="/vendor/katex.css">
+<link rel="stylesheet" href="/notes.css">
+</head>
+<body class="view-list">
+<header class="notes-header">
+  <div class="notes-brand">
+    <span class="notes-mark" aria-hidden="true">✎</span>
+    <div>
+      <h1>笔记</h1>
+      <p id="header-hint">Markdown 笔记本 · 本地保存</p>
+    </div>
+  </div>
+  <div class="notes-header-actions">
+    <button type="button" id="export-all" class="ghost">导出全部</button>
+    <button type="button" id="new-note" class="primary">+ 新建</button>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<main class="notes-main">
+  <aside class="notes-sidebar">
+    <div class="search-row">
+      <input id="search" type="search" placeholder="搜索标题或正文…" autocomplete="off">
+    </div>
+    <div id="note-list" class="note-list" role="list"></div>
+    <div id="list-empty" class="empty" hidden>
+      <p>还没有笔记。</p>
+      <p class="muted">点右上角「+ 新建」开始记录。</p>
+    </div>
+  </aside>
+
+  <section class="notes-editor">
+    <div id="editor-empty" class="empty">
+      <p>从左侧选择一条笔记，或新建一条。</p>
+      <p class="muted">支持 Markdown：标题、列表、代码块、公式（$…$）。</p>
+    </div>
+
+    <div id="editor" class="editor" hidden>
+      <div class="editor-top">
+        <button type="button" id="back-to-list" class="ghost back" title="返回列表">← 列表</button>
+        <input id="note-title" class="note-title" placeholder="笔记标题" autocomplete="off">
+      </div>
+
+      <div class="editor-meta">
+        <label class="field">
+          <span>关联教材</span>
+          <select id="note-book"><option value="">不关联</option></select>
+        </label>
+        <label class="field page-field">
+          <span>页码</span>
+          <input id="note-page" type="number" min="1" step="1" placeholder="—">
+        </label>
+        <label class="field pin-field">
+          <input id="note-pinned" type="checkbox">
+          <span>置顶</span>
+        </label>
+        <button type="button" id="use-reading-page" class="ghost use-reading-page" hidden title="把来源改成 Reader 当前打开的教材与页码">用当前页</button>
+      </div>
+
+      <!-- 实时渲染编辑区：非编辑中的语块直接渲染，光标所在块显示源码 -->
+      <div id="note-live" class="note-live"></div>
+
+      <footer class="editor-foot">
+        <span id="status" class="status">—</span>
+        <div class="foot-actions">
+          <button type="button" id="delete-note" class="ghost danger">删除</button>
+          <button type="button" id="export-note" class="ghost">导出 MD</button>
+          <button type="button" id="save-note" class="primary">保存</button>
+        </div>
+      </footer>
+    </div>
+  </section>
+</main>
+
+<script type="module" src="/notes.js"></script>
+</body>
+</html>
